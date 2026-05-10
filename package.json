@@ -2,10 +2,12 @@
   "name": "edgefm",
   "version": "0.1.0",
   "private": true,
+  "type": "module",
   "scripts": {
     "publish": "node pipeline/index.js && wrangler deploy",
     "dev": "wrangler dev",
-    "pipeline": "node pipeline/index.js"
+    "pipeline": "node pipeline/index.js",
+    "demo": "node demo/generate.js"
   },
   "devDependencies": {
     "wrangler": "^3.0.0"
