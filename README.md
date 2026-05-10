@@ -6,8 +6,8 @@ An internet radio station that runs entirely on Cloudflare's free tier. Streams 
 
 - Audio files are stored in Cloudflare R2 as 10-second AAC/MPEG-TS segments
 - A Cloudflare Worker serves a dynamic HLS playlist calculated from the current UTC time
-- Track order is determined by a clock wheel template + seeded RNG, so the selection is random but reproducible — every listener gets the same stream
-- All heavy lifting (segmenting, scheduling) happens locally before deploy
+- Track order is determined by a clock wheel template + seeded RNG, so the selection is semi-random but reproducible — every listener gets the same stream
+- All heavy lifting (segmenting, scheduling) happens locally before deploy; the Worker is pure math
 
 ## Architecture
 
@@ -17,9 +17,10 @@ pipeline/index.js          # Local tool: ffmpeg → R2 → catalog + schedule
 src/worker.js              # Cloudflare Worker: serves /stream.m3u8 and /now-playing
 src/catalog.json           # Generated — track metadata bundled with Worker
 src/schedule.json          # Generated — 30-day pre-computed slot schedule
-public/index.html          # Web player (hls.js), deployable to Cloudflare Pages
+public/index.html          # Web player (hls.js), deployed to Cloudflare Pages
 wheels.json                # Clock wheel slot template
-wrangler.toml              # Cloudflare config
+wrangler.toml              # Cloudflare Worker config
+terraform/                 # Cloudflare infrastructure (R2 bucket, Pages project)
 ```
 
 ## Content structure
@@ -61,56 +62,60 @@ Place a `.json` file next to any audio file to override defaults:
 - [Node.js](https://nodejs.org) 18+
 - [ffmpeg](https://ffmpeg.org) in your PATH
 - [Terraform](https://developer.hashicorp.com/terraform/install) 1.5+
-- A [Cloudflare account](https://cloudflare.com)
+- A [Cloudflare account](https://cloudflare.com) with an API token that has R2 and Pages permissions
 
-### 1. Provision infrastructure (Terraform)
+### 1. Provision infrastructure
 
 ```bash
 cd terraform
 cp terraform.tfvars.example terraform.tfvars
-# Fill in your Cloudflare account ID and GitHub details in terraform.tfvars
+# Edit terraform.tfvars — fill in your Cloudflare account ID and GitHub details
 
 export CLOUDFLARE_API_TOKEN="your-api-token"
 terraform init
 terraform apply
 ```
 
-This creates the R2 bucket (with CORS) and the Cloudflare Pages project for the web player.
+This creates the R2 bucket (with CORS configured) and the Cloudflare Pages project for the web player.
 
-After apply, enable public access on the R2 bucket in the Cloudflare dashboard and copy the `pub-XXXX.r2.dev` URL into `wrangler.toml` as `PUBLIC_URL`.
+After `apply`, go to the Cloudflare dashboard → R2 → `edgefm-audio` → Settings and enable the public development URL. Copy the resulting `pub-XXXX.r2.dev` URL.
 
-### 2. Deploy the Worker
+### 2. Configure the Worker
+
+Update `wrangler.toml` with your R2 public URL and desired epoch:
+
+```toml
+[vars]
+EPOCH      = "2026-01-01T00:00:00Z"   # Station start time — don't change once live
+PUBLIC_URL = "https://pub-XXXX.r2.dev" # Your R2 public URL from step 1
+```
+
+Update `public/index.html` — replace `REPLACE_WITH_WORKER_URL` with your Worker URL
+(`https://edgefm.<your-subdomain>.workers.dev`).
+
+### 3. Add content and deploy
 
 ```bash
 npm install
 npx wrangler login
-```
 
-### Deploy
-
-```bash
+# Add audio files to content/, then:
 npm run publish
 ```
 
-This runs the pipeline (segment all audio, upload to R2, generate catalog + schedule) then deploys the Worker.
+`npm run publish` runs the full pipeline — segments audio with ffmpeg, uploads to R2, generates the catalog and schedule, then deploys the Worker. Run it again whenever you add or change content.
 
-To only run the pipeline without deploying:
+## Day-to-day commands
 
-```bash
-npm run pipeline
-```
-
-### Development
-
-```bash
-npm run dev
-```
-
-Starts a local Worker dev server. Note: segment URLs will still point at R2.
+| Command | What it does |
+|---|---|
+| `npm run publish` | Full pipeline + Worker deploy |
+| `npm run pipeline` | Segment + upload + generate catalog/schedule only |
+| `npm run dev` | Local Worker dev server (segment URLs still point at R2) |
 
 ## Clock wheel
 
-Edit `wheels.json` to change the slot sequence. Each slot has a `type` matching a content category, and optionally `tags` to filter the pool further.
+Edit `wheels.json` to change the slot sequence. Each slot has a `type` matching a content category, and optionally `tags` to filter the pool.
 
 ```json
 {
@@ -120,7 +125,8 @@ Edit `wheels.json` to change the slot sequence. Each slot has a `type` matching 
       { "type": "bumper" },
       { "type": "music", "tags": ["chill"] },
       { "type": "dj-intro" },
-      { "type": "music", "tags": ["hype"] }
+      { "type": "music", "tags": ["hype"] },
+      { "type": "bumper" }
     ]
   },
   "schedule": [
@@ -129,22 +135,21 @@ Edit `wheels.json` to change the slot sequence. Each slot has a `type` matching 
 }
 ```
 
-Multiple named wheels with different hour ranges are supported — add entries to `wheels` and narrow the `hours` ranges in `schedule` to add time-of-day variation.
+Multiple named wheels with different hour ranges are supported — add entries to `wheels` and split the `hours` ranges in `schedule` to add time-of-day variation.
 
 ## Endpoints
 
 | Endpoint | Description |
 |---|---|
 | `GET /stream.m3u8` | HLS playlist for the current position in the schedule |
-| `GET /now-playing` | JSON with current track name, category, and position |
-
-The stream URL works directly in VLC, Pacific Drive (via M3U), and any HLS-capable player.
+| `GET /now-playing` | JSON — current track name, category, tags, and playback position |
 
 ## Listening
 
-Open `public/index.html` in a browser, or deploy it to Cloudflare Pages and point `WORKER_URL` at your Worker's URL.
+The Cloudflare Pages deployment of `public/index.html` is the primary web player. For external players, point them at your Worker's stream URL directly:
 
-For VLC or Pacific Drive, point them at:
 ```
-https://<your-worker>.workers.dev/stream.m3u8
+https://edgefm.<your-subdomain>.workers.dev/stream.m3u8
 ```
+
+This URL works in VLC, Pacific Drive (add it as a custom radio station via M3U), and any HLS-capable player.
