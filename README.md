@@ -60,22 +60,30 @@ Place a `.json` file next to any audio file to override defaults:
 
 - [Node.js](https://nodejs.org) 18+
 - [ffmpeg](https://ffmpeg.org) in your PATH
+- [Terraform](https://developer.hashicorp.com/terraform/install) 1.5+
 - A [Cloudflare account](https://cloudflare.com)
 
-### First-time setup
+### 1. Provision infrastructure (Terraform)
+
+```bash
+cd terraform
+cp terraform.tfvars.example terraform.tfvars
+# Fill in your Cloudflare account ID and GitHub details in terraform.tfvars
+
+export CLOUDFLARE_API_TOKEN="your-api-token"
+terraform init
+terraform apply
+```
+
+This creates the R2 bucket (with CORS) and the Cloudflare Pages project for the web player.
+
+After apply, enable public access on the R2 bucket in the Cloudflare dashboard and copy the `pub-XXXX.r2.dev` URL into `wrangler.toml` as `PUBLIC_URL`.
+
+### 2. Deploy the Worker
 
 ```bash
 npm install
-
-# Authenticate with Cloudflare
 npx wrangler login
-
-# Create the R2 bucket
-npx wrangler r2 bucket create edgefm-audio
-
-# Enable public access on the bucket in the Cloudflare dashboard,
-# then copy the public URL into wrangler.toml:
-#   PUBLIC_URL = "https://pub-XXXX.r2.dev"
 ```
 
 ### Deploy

@@ -1,0 +1,4 @@
+cloudflare_account_id = "your-account-id-here"
+r2_location           = "WEUR"
+github_owner          = "your-github-username"
+github_repo           = "edgefm"
