@@ -82,7 +82,7 @@ cp backend.hcl.example backend.hcl
 # (create R2 API tokens at dash.cloudflare.com → R2 → Manage R2 API tokens)
 
 cp terraform.tfvars.example terraform.tfvars
-# Edit terraform.tfvars — fill in your Cloudflare account ID and GitHub details
+# Edit terraform.tfvars — fill in your Cloudflare account ID, GitHub details, and alert email
 
 export CLOUDFLARE_API_TOKEN="your-api-token"
 terraform init -backend-config=backend.hcl
