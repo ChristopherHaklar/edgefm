@@ -1,0 +1,11 @@
+name = "edgefm"
+main = "src/worker.js"
+compatibility_date = "2024-01-01"
+
+[[r2_buckets]]
+binding = "AUDIO"
+bucket_name = "edgefm-audio"
+
+[vars]
+EPOCH = "2026-01-01T00:00:00Z"
+PUBLIC_URL = "https://audio.edgefm.workers.dev"

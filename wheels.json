@@ -1,0 +1,19 @@
+{
+  "wheels": {
+    "default": [
+      { "type": "music", "tags": ["upbeat"] },
+      { "type": "bumper" },
+      { "type": "music", "tags": ["chill"] },
+      { "type": "dj-intro" },
+      { "type": "music", "tags": ["upbeat"] },
+      { "type": "bumper" },
+      { "type": "music", "tags": ["hype"] },
+      { "type": "dj-intro" },
+      { "type": "music", "tags": ["chill"] },
+      { "type": "bumper" }
+    ]
+  },
+  "schedule": [
+    { "hours": "0-23", "wheel": "default" }
+  ]
+}

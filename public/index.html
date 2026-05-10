@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>EdgeFM</title>
+  <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: #111;
+      color: #eee;
+      font-family: monospace;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      gap: 1.5rem;
+    }
+    h1 { font-size: 2rem; letter-spacing: 0.2em; }
+    #now-playing { font-size: 0.9rem; color: #aaa; min-height: 1.2em; }
+    audio { width: 320px; }
+    #status { font-size: 0.75rem; color: #555; }
+  </style>
+</head>
+<body>
+  <h1>EDGE FM</h1>
+  <div id="now-playing">Loading...</div>
+  <audio id="player" controls autoplay></audio>
+  <div id="status"></div>
+
+  <script>
+    const WORKER_URL = "REPLACE_WITH_WORKER_URL";
+    const audio = document.getElementById("player");
+    const nowPlaying = document.getElementById("now-playing");
+    const status = document.getElementById("status");
+
+    if (Hls.isSupported()) {
+      const hls = new Hls({ lowLatencyMode: false });
+      hls.loadSource(`${WORKER_URL}/stream.m3u8`);
+      hls.attachMedia(audio);
+      hls.on(Hls.Events.MANIFEST_PARSED, () => {
+        audio.play().catch(() => {});
+        status.textContent = "hls.js";
+      });
+      hls.on(Hls.Events.ERROR, (_, data) => {
+        if (data.fatal) status.textContent = `error: ${data.details}`;
+      });
+    } else if (audio.canPlayType("application/vnd.apple.mpegurl")) {
+      // Native HLS (Safari / iOS)
+      audio.src = `${WORKER_URL}/stream.m3u8`;
+      audio.play().catch(() => {});
+      status.textContent = "native hls";
+    } else {
+      status.textContent = "HLS not supported in this browser";
+    }
+
+    async function pollNowPlaying() {
+      try {
+        const res = await fetch(`${WORKER_URL}/now-playing`);
+        const data = await res.json();
+        nowPlaying.textContent = data.track ?? "—";
+      } catch {}
+    }
+
+    pollNowPlaying();
+    setInterval(pollNowPlaying, 10000);
+  </script>
+</body>
+</html>

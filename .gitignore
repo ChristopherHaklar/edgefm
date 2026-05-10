@@ -1,0 +1,11 @@
+node_modules/
+.wrangler/
+segments/
+dist/
+*.aac
+*.ts
+*.mp3
+*.wav
+*.flac
+src/catalog.json
+src/schedule.json
