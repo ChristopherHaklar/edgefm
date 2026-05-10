@@ -89,9 +89,11 @@ terraform init -backend-config=backend.hcl
 terraform apply
 ```
 
-This creates the `edgefm-audio` R2 bucket (with CORS configured) and the Cloudflare Pages project for the web player.
+This creates the `edgefm-audio` R2 bucket (with CORS configured), the Cloudflare Pages project for the web player, and a billing notification policy that emails you the moment any spend is detected.
 
-After `apply`, go to the Cloudflare dashboard → R2 → `edgefm-audio` → Settings and enable the public development URL. Copy the resulting `pub-XXXX.r2.dev` URL.
+After `apply`:
+- Go to Cloudflare dashboard → R2 → `edgefm-audio` → Settings and enable the public development URL. Copy the resulting `pub-XXXX.r2.dev` URL.
+- Set a hard spend cap: Cloudflare dashboard → Billing → Spend Management → set limit to **$0**. Terraform cannot enforce this programmatically — it must be set manually. This is your backstop against runaway costs.
 
 ### 2. Configure the Worker
 

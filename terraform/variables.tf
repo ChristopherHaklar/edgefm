@@ -19,3 +19,8 @@ variable "github_repo" {
   type        = string
   default     = "edgefm"
 }
+
+variable "alert_email" {
+  description = "Email address to receive billing spend alerts"
+  type        = string
+}
