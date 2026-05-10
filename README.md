@@ -13,6 +13,7 @@ An internet radio station that runs entirely on Cloudflare's free tier. Streams 
 
 ```
 content/                   # Your audio files, organised by category
+demo/generate.js           # Generates synthetic demo audio for local testing
 pipeline/index.js          # Local tool: ffmpeg → R2 → catalog + schedule
 src/worker.js              # Cloudflare Worker: serves /stream.m3u8 and /now-playing
 src/catalog.json           # Generated — track metadata bundled with Worker
@@ -59,7 +60,7 @@ Place a `.json` file next to any audio file to override defaults:
 
 ### Prerequisites
 
-- [Node.js](https://nodejs.org) 18+
+- [Node.js](https://nodejs.org) 18+ (install via [nvm](https://github.com/nvm-sh/nvm))
 - [ffmpeg](https://ffmpeg.org) in your PATH
 - [Terraform](https://developer.hashicorp.com/terraform/install) 1.5+
 - A [Cloudflare account](https://cloudflare.com) with an API token that has R2 and Pages permissions
@@ -99,16 +100,22 @@ Update `public/index.html` — replace `REPLACE_WITH_WORKER_URL` with your Worke
 npm install
 npx wrangler login
 
-# Add audio files to content/, then:
+# To test with synthetic audio before adding real content:
+npm run demo
+
+# Once content is in place:
 npm run publish
 ```
 
-`npm run publish` runs the full pipeline — segments audio with ffmpeg, uploads to R2, generates the catalog and schedule, then deploys the Worker. Run it again whenever you add or change content.
+`npm run demo` generates 10 synthetic tone tracks (one per slot category) using ffmpeg — useful for verifying the full pipeline before adding real audio.
+
+`npm run publish` runs the full pipeline — segments audio with ffmpeg, uploads new segments to R2, generates the catalog and schedule, then deploys the Worker. Run it again whenever you add or change content.
 
 ## Day-to-day commands
 
 | Command | What it does |
 |---|---|
+| `npm run demo` | Generate synthetic demo audio into `content/` for testing |
 | `npm run publish` | Full pipeline + Worker deploy |
 | `npm run pipeline` | Segment + upload + generate catalog/schedule only |
 | `npm run dev` | Local Worker dev server (segment URLs still point at R2) |
