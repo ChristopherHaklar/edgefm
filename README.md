@@ -67,17 +67,29 @@ Place a `.json` file next to any audio file to override defaults:
 
 ### 1. Provision infrastructure
 
+Terraform state is stored in a Cloudflare R2 bucket. Create it before the first init:
+
+```bash
+wrangler r2 bucket create edgefm-tfstate
+```
+
+Then configure the backend and your variables:
+
 ```bash
 cd terraform
+cp backend.hcl.example backend.hcl
+# Edit backend.hcl — fill in your account ID and R2 API token credentials
+# (create R2 API tokens at dash.cloudflare.com → R2 → Manage R2 API tokens)
+
 cp terraform.tfvars.example terraform.tfvars
 # Edit terraform.tfvars — fill in your Cloudflare account ID and GitHub details
 
 export CLOUDFLARE_API_TOKEN="your-api-token"
-terraform init
+terraform init -backend-config=backend.hcl
 terraform apply
 ```
 
-This creates the R2 bucket (with CORS configured) and the Cloudflare Pages project for the web player.
+This creates the `edgefm-audio` R2 bucket (with CORS configured) and the Cloudflare Pages project for the web player.
 
 After `apply`, go to the Cloudflare dashboard → R2 → `edgefm-audio` → Settings and enable the public development URL. Copy the resulting `pub-XXXX.r2.dev` URL.
 

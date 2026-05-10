@@ -6,13 +6,10 @@ terraform {
     }
   }
 
-  # Uncomment to use remote state (recommended for teams):
-  # backend "s3" {
-  #   bucket   = "your-tfstate-bucket"
-  #   key      = "edgefm/terraform.tfstate"
-  #   region   = "auto"
-  #   endpoint = "https://<account_id>.r2.cloudflarestorage.com"
-  # }
+  backend "s3" {
+    # Config is supplied via backend.hcl (gitignored).
+    # Run: terraform init -backend-config=backend.hcl
+  }
 }
 
 provider "cloudflare" {
