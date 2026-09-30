@@ -3,14 +3,17 @@
 // Run: npm run scheduler, then open http://localhost:8790
 
 import { createServer } from "http";
-import { readFileSync, writeFileSync, existsSync } from "fs";
+import { readFileSync, writeFileSync, existsSync, mkdirSync } from "fs";
+import { spawn } from "child_process";
 import { join } from "path";
 import { fileURLToPath } from "url";
 import { validateWheels, formatWheels, SCHEDULE_DAYS, EPOCH } from "../pipeline/schedule.js";
+import { listFolders, FOLDER_NAME } from "../pipeline/content.js";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const WHEELS_FILE = join(ROOT, "wheels.json");
 const CATALOG_FILE = join(ROOT, "src", "catalog.json");
+const CONTENT_DIR = join(ROOT, "content");
 const PORT = Number(process.env.PORT ?? 8790);
 
 // The page builds its preview with the same scheduling code the pipeline uses
@@ -22,6 +25,28 @@ const STATIC = {
 // Re-read on every request so a pipeline run is picked up without restarting
 function loadCatalog() {
   return existsSync(CATALOG_FILE) ? JSON.parse(readFileSync(CATALOG_FILE, "utf8")) : null;
+}
+
+// Folders on disk plus the processed track list; a folder can have audio the pipeline hasn't seen yet
+function contentState() {
+  const catalog = loadCatalog();
+  return { folders: listFolders(CONTENT_DIR), tracks: catalog?.tracks ?? [], catalogMissing: !catalog };
+}
+
+// "promo" or "promo/ads": 1–4 simple folder names, never anything outside content/
+function contentPath(path, { allowRoot = false } = {}) {
+  if (typeof path !== "string") return null;
+  if (path === "" && allowRoot) return CONTENT_DIR;
+  const parts = path.split("/");
+  if (parts.length > 4 || !parts.every(p => FOLDER_NAME.test(p))) return null;
+  return join(CONTENT_DIR, ...parts);
+}
+
+function openInFileManager(dir) {
+  const [cmd, args] = process.platform === "win32" ? ["explorer.exe", [dir]]
+    : process.platform === "darwin" ? ["open", [dir]]
+    : ["xdg-open", [dir]];
+  spawn(cmd, args, { detached: true, stdio: "ignore" }).on("error", () => {}).unref();
 }
 
 function send(res, status, body, type = "application/json") {
@@ -50,14 +75,34 @@ createServer(async (req, res) => {
     }
 
     if (req.method === "GET" && req.url === "/api/state") {
-      const catalog = loadCatalog();
       return send(res, 200, {
         wheels: JSON.parse(readFileSync(WHEELS_FILE, "utf8")),
-        tracks: catalog?.tracks ?? [],
-        catalogMissing: !catalog,
+        ...contentState(),
         epoch: EPOCH.toISOString(),
         days: SCHEDULE_DAYS,
       });
+    }
+
+    if (req.method === "GET" && req.url === "/api/content") {
+      return send(res, 200, contentState());
+    }
+
+    // Create a content type (top-level folder) or a tag (subfolder)
+    if (req.method === "POST" && req.url === "/api/folders") {
+      const { path } = await readBody(req);
+      const dir = contentPath(path);
+      if (!dir) return send(res, 400, { errors: ["Use lowercase letters, numbers and dashes, e.g. \"promo\" or \"late-night\""] });
+      if (existsSync(dir)) return send(res, 409, { errors: [`content/${path} already exists`] });
+      mkdirSync(dir, { recursive: true });
+      return send(res, 200, contentState());
+    }
+
+    if (req.method === "POST" && req.url === "/api/open") {
+      const { path } = await readBody(req);
+      const dir = contentPath(path, { allowRoot: true });
+      if (!dir || !existsSync(dir)) return send(res, 400, { errors: [`content/${path} doesn't exist`] });
+      openInFileManager(dir);
+      return send(res, 200, { ok: true });
     }
 
     if (req.method === "POST" && req.url === "/api/save") {

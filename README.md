@@ -26,7 +26,7 @@ terraform/                 # Cloudflare infrastructure (R2 bucket, Pages project
 
 ## Content structure
 
-Drop audio files into subdirectories under `content/`. The directory name becomes the track's tag.
+Each top-level folder under `content/` is a **type** of content, and every subfolder inside it adds a **tag**. A wheel slot picks a type, and optionally tags to narrow it down. To add a new type, just make a folder (or use **+ New type** in the scheduler). Folder names use lowercase letters, numbers and dashes.
 
 ```
 content/
@@ -35,11 +35,18 @@ content/
 │   ├── upbeat/            # tag: upbeat
 │   ├── chill/             # tag: chill
 │   └── hype/              # tag: hype
-├── bumpers/
-│   ├── common/            # weight: 1.0
-│   └── rare/              # weight: 0.05 (rarely selected)
-└── dj-intro/
+├── bumper/                # station IDs
+│   ├── common/            # tag: common
+│   └── rare/              # tag: rare, rarely picked
+├── dj-intro/              # short DJ breaks between songs
+├── promo/
+│   ├── ads/               # tag: ads (sponsor spots)
+│   └── station/           # tag: station (plugs for the stream)
+└── talk/
+    └── stories/           # tag: stories (longer spoken pieces)
 ```
+
+Tracks in any folder named `rare` get a weight of 0.05 (picked about 1/20th as often) unless a sidecar sets one. `npm run demo:voices` generates text-to-speech placeholders for the bumper, dj-intro, promo and talk folders.
 
 Supported formats: `.mp3`, `.wav`, `.flac`, `.aac`, `.m4a`, `.ogg`
 

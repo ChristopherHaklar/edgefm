@@ -8,6 +8,7 @@ import { join, basename, extname, relative, sep } from "path";
 import { fileURLToPath } from "url";
 import { createHash } from "crypto";
 import { buildSchedule, SCHEDULE_DAYS } from "./schedule.js";
+import { isAudio, RARE_WEIGHT } from "./content.js";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const CONTENT_DIR = join(ROOT, "content");
@@ -74,16 +75,16 @@ function segmentTrack(filePath, outDir, trackId, rawDuration) {
 // --- Scan content directory ---
 function scanContent() {
   const catalog = { tracks: [] };
-  const audioExts = new Set([".mp3", ".wav", ".flac", ".aac", ".m4a", ".ogg"]);
 
   function scanDir(dir, category, tags = [], defaultWeight = 1.0) {
     if (!existsSync(dir)) return;
     for (const entry of readdirSync(dir, { withFileTypes: true })) {
       const fullPath = join(dir, entry.name);
       if (entry.isDirectory()) {
-        // subdirectory name becomes a tag (e.g. content/music/upbeat → tag "upbeat")
-        scanDir(fullPath, category, [...tags, entry.name], defaultWeight);
-      } else if (audioExts.has(extname(entry.name).toLowerCase())) {
+        // subdirectory name becomes a tag (e.g. content/music/upbeat → tag "upbeat");
+        // anything under a "rare" folder is rarely picked
+        scanDir(fullPath, category, [...tags, entry.name], entry.name === "rare" ? RARE_WEIGHT : defaultWeight);
+      } else if (isAudio(entry.name)) {
         // Hash the repo-relative path with "/" separators so IDs match across OSes
         const trackId = createHash("md5")
           .update(relative(ROOT, fullPath).split(sep).join("/"))
@@ -127,10 +128,11 @@ function scanContent() {
     }
   }
 
-  scanDir(join(CONTENT_DIR, "music"), "music");
-  scanDir(join(CONTENT_DIR, "bumpers", "common"), "bumper", [], 1.0);
-  scanDir(join(CONTENT_DIR, "bumpers", "rare"), "bumper", ["rare"], 0.05);
-  scanDir(join(CONTENT_DIR, "dj-intro"), "dj-intro");
+  // Each top-level folder is a content type (music, bumper, promo, ...)
+  for (const entry of readdirSync(CONTENT_DIR, { withFileTypes: true })) {
+    if (entry.isDirectory()) scanDir(join(CONTENT_DIR, entry.name), entry.name);
+    else if (isAudio(entry.name)) console.warn(`  warning: ${entry.name} is directly in content/ — put it in a type folder`);
+  }
 
   return catalog;
 }

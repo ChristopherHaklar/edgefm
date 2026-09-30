@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Generates placeholder bumpers and DJ intros with the OS text-to-speech
+// Generates placeholder bumpers, DJ intros, promos and talk with the OS text-to-speech
 // (Windows SAPI or macOS `say`), each over a soft synth bed. Clips are sized
 // to just under a whole number of 10s segments so the pipeline's padding
 // doesn't leave dead air. Pass --force to regenerate existing clips.
@@ -23,22 +23,22 @@ const WARM = [174.61, 220.0, 261.63];    // F major, lower
 
 const clips = [
   {
-    path: "content/bumpers/common/tts_bumper_1.mp3", voice: STATION, bed: BRIGHT,
+    path: "content/bumper/common/tts_bumper_1.mp3", voice: STATION, bed: BRIGHT,
     text: "You're listening to Edge FM.",
     meta: { name: "Station ID", artist: "Edge FM" },
   },
   {
-    path: "content/bumpers/common/tts_bumper_2.mp3", voice: STATION, bed: BRIGHT,
+    path: "content/bumper/common/tts_bumper_2.mp3", voice: STATION, bed: BRIGHT,
     text: "Edge FM. Broadcasting from the edge of the network.",
     meta: { name: "Station ID", artist: "Edge FM" },
   },
   {
-    path: "content/bumpers/common/tts_bumper_3.mp3", voice: STATION, bed: BRIGHT,
+    path: "content/bumper/common/tts_bumper_3.mp3", voice: STATION, bed: BRIGHT,
     text: "Edge FM. All day, every day, from Lud and Schlatt Crossing.",
     meta: { name: "Station ID", artist: "Edge FM" },
   },
   {
-    path: "content/bumpers/rare/tts_rare_bumper.mp3", voice: DJ, bed: BRIGHT,
+    path: "content/bumper/rare/tts_rare_bumper.mp3", voice: DJ, bed: BRIGHT,
     text: "Congratulations. You have found the rare Edge FM bumper. Tell no one.",
     meta: { name: "Station ID (rare)", artist: "Edge FM" },
   },
@@ -61,6 +61,56 @@ const clips = [
     path: "content/dj-intro/tts_dj_intro_4.mp3", voice: DJ, bed: WARM,
     text: "Edge FM, keeping you company around the clock. Up next, more from the Crossing soundtrack.",
     meta: { name: "DJ break", artist: "Edge FM" },
+  },
+
+  // Promos: fictional sponsor ads and plugs for the station
+  {
+    path: "content/promo/ads/tts_ad_tax_office.mp3", voice: STATION, bed: BRIGHT,
+    text: "Tired of doing your own taxes? Come on down to the Tax Office, open day and night. " +
+          "We'll get to your paperwork eventually. The Tax Office. Your financial obligations are our financial obligations.",
+    meta: { name: "Ad: The Tax Office", artist: "Edge FM" },
+  },
+  {
+    path: "content/promo/ads/tts_ad_bait_and_tackle.mp3", voice: STATION, bed: BRIGHT,
+    text: "Sunset Pier Bait and Tackle is celebrating its grand opening! Fresh bait, questionable tackle, " +
+          "and the best sunsets on the whole island. Sunset Pier Bait and Tackle. Now open, most days.",
+    meta: { name: "Ad: Sunset Pier Bait and Tackle", artist: "Edge FM" },
+  },
+  {
+    path: "content/promo/ads/tts_ad_dental.mp3", voice: STATION, bed: BRIGHT,
+    text: "Crossing Dental. Every cleaning comes with a free lullaby, and every lullaby comes with a small cleaning fee. " +
+          "Crossing Dental. We'll see you when we see you.",
+    meta: { name: "Ad: Crossing Dental", artist: "Edge FM" },
+  },
+  {
+    path: "content/promo/station/tts_promo_1.mp3", voice: DJ, bed: WARM,
+    text: "Love what you're hearing? Edge FM streams around the clock, straight from the edge of the network. Tell a friend.",
+    meta: { name: "Station promo: tell a friend", artist: "Edge FM" },
+  },
+  {
+    path: "content/promo/station/tts_promo_2.mp3", voice: DJ, bed: WARM,
+    text: "Coming up on Edge FM: more music from the Crossing, more station IDs than anyone asked for, and absolutely no news.",
+    meta: { name: "Station promo: coming up", artist: "Edge FM" },
+  },
+
+  // Talk: longer spoken pieces
+  {
+    path: "content/talk/stories/tts_tales_from_the_pier.mp3", voice: DJ, bed: WARM,
+    text: "Welcome to Tales from the Pier. Every evening, just as the sun dips behind the water, the pier fills up. " +
+          "Fishermen, dreamers, and the occasional raccoon looking for a snack. " +
+          "Old timers say that if you stand at the very end of the pier at exactly ten P M, " +
+          "you can hear music drifting across the water, even when the radio is off. " +
+          "Nobody knows where it comes from. Most people agree it's pretty good, though. " +
+          "That's all for Tales from the Pier. Back to the music.",
+    meta: { name: "Tales from the Pier", artist: "Edge FM" },
+  },
+  {
+    path: "content/talk/stories/tts_basement_report.mp3", voice: DJ, bed: WARM,
+    text: "This is the Basement Report. Nobody is quite sure what's down in the old basement under town hall. " +
+          "Some say it's filing cabinets. Some say it's more filing cabinets. " +
+          "Last week, a brave volunteer went down with a flashlight and came back two hours later holding a single stapler. " +
+          "He won't talk about what he saw. The investigation continues. This has been the Basement Report.",
+    meta: { name: "The Basement Report", artist: "Edge FM" },
   },
 ];
 

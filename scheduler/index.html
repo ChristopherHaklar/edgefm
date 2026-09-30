@@ -67,6 +67,13 @@
     .hour b { font: 600 13px var(--mono); }
     .hour small { font-size: 10px; opacity: .85; white-space: nowrap; }
 
+    code { font-family: var(--mono); font-size: 12px; background: var(--soft); border-radius: 4px; padding: 0 4px; }
+    .content-type { border-top: 1px solid var(--line); padding: 6px 0; }
+    .content-row { display: flex; align-items: center; gap: 8px; min-height: 28px; font-size: 13px; }
+    .content-row .folder { font-family: var(--mono); }
+    .content-row .count { color: var(--muted); font-size: 12px; flex: 1; }
+    .content-row .new { color: var(--warn); font-size: 12px; }
+    .content-row button { padding: 1px 8px; font-size: 12px; }
     .wheel { border: 1px solid var(--line); border-radius: 8px; padding: 10px; margin-bottom: 10px; }
     .wheel-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
     .wheel-name { flex: 0 1 180px; min-width: 0; font-weight: 600; background: transparent; border: 1px solid transparent; border-radius: 4px; padding: 2px 6px; }
@@ -178,6 +185,16 @@
         <div id="hours" class="hours"></div>
       </div>
       <div class="panel">
+        <div class="panel-head">
+          <h2>Content</h2>
+          <button data-action="refresh-content">Refresh</button>
+          <button data-action="open-folder" data-path="">Open content folder</button>
+          <button data-action="new-type">+ New type</button>
+        </div>
+        <p class="hint">Each folder in <code>content/</code> is a type, and its subfolders are tags a slot can pick. Tracks in a <code>rare</code> folder are picked much less often. Add audio files, then run <code>npm run pipeline</code> so they can be scheduled.</p>
+        <div id="content"></div>
+      </div>
+      <div class="panel">
         <div class="panel-head"><h2>Wheels</h2><button data-action="add-wheel">+ New wheel</button></div>
         <p class="hint">Each wheel plays its slots in order, then repeats. A slot picks a random track of its type. Highlighted tags narrow the pick to tracks with all of those tags.</p>
         <p class="hint">Each clock is an estimate of one hour: every slot gets the average length of its tracks, and the wheel repeats (lighter slices) until the hour is full. On air, a wheel carries on from where it left off rather than restarting on the hour.</p>
@@ -212,9 +229,9 @@
 
     const DAY = 24 * 60 * 60;
     const COLORS = ["#2f6fe4", "#d98a1c", "#2c9c72", "#a64fc2", "#d4493f", "#1f95ad", "#7d7428", "#c4507f"];
-    const BASE_TYPES = ["music", "bumper", "dj-intro"];
-    const TYPE_COLORS = { "music": "#4a78d8", "bumper": "#3aa981", "dj-intro": "#e09a3a" };
-    const EXTRA_TYPE_COLORS = ["#9b6fd0", "#d05c5c", "#3b9fb8", "#a0892c"];
+    const TYPE_COLORS = { "music": "#4a78d8", "bumper": "#3aa981", "dj-intro": "#e09a3a", "promo": "#d05c5c", "talk": "#9b6fd0" };
+    const EXTRA_TYPE_COLORS = ["#3b9fb8", "#a0892c", "#c4507f", "#6b8e3a"];
+    const NEW_TYPE = "__new__";
 
     const state = {
       wheels: {},        // name → slots, edited in place
@@ -222,6 +239,7 @@
       tracks: [], days: 30, epochMs: 0, catalogMissing: false,
       brush: null, day: 0, saved: "",
       zoom: {},          // wheel name → { k, x, y } clock zoom
+      folders: [],       // content/ folders on disk: [{ path, audio }]
     };
 
     const $ = id => document.getElementById(id);
@@ -261,8 +279,7 @@
       const res = await fetch("/api/state");
       const s = await res.json();
       applyWheels(s.wheels);
-      state.tracks = s.tracks;
-      state.catalogMissing = s.catalogMissing;
+      setContent(s);
       state.days = s.days;
       state.epochMs = Date.parse(s.epoch);
       state.saved = JSON.stringify(currentJson());
@@ -281,6 +298,7 @@
     function render() {
       renderHeader();
       renderHours();
+      renderContent();
       renderWheels();
       wireClocks();
       schedulePreview();
@@ -307,13 +325,84 @@
       }).join("");
     }
 
+    function setContent({ folders, tracks, catalogMissing }) {
+      state.folders = folders;
+      state.tracks = tracks;
+      state.catalogMissing = catalogMissing;
+    }
+
+    // Types are top-level folders, plus any processed or in-use type whose folder has gone
+    function allTypes(...extra) {
+      const fromFolders = state.folders.filter(f => !f.path.includes("/")).map(f => f.path);
+      return [...new Set([...fromFolders, ...state.tracks.map(t => t.category), ...extra])].filter(Boolean).sort();
+    }
+
+    // Tags are subfolder names under the type, including empty ones not processed yet
     function tagsFor(type) {
-      return [...new Set(state.tracks.filter(t => t.category === type).flatMap(t => t.tags))].sort();
+      const fromFolders = state.folders.filter(f => f.path.startsWith(type + "/")).flatMap(f => f.path.split("/").slice(1));
+      const fromTracks = state.tracks.filter(t => t.category === type).flatMap(t => t.tags);
+      return [...new Set([...fromFolders, ...fromTracks])].sort();
+    }
+
+    function renderContent() {
+      const processed = new Set(state.tracks.map(t => t.file));
+      const row = (folder, depth) => {
+        const name = folder.path.split("/").pop();
+        const unprocessed = folder.audio.filter(f => !processed.has(f)).length;
+        const isType = depth === 0;
+        const total = isType ? state.tracks.filter(t => t.category === folder.path).length : 0;
+        const count = isType
+          ? `${total} track${total === 1 ? "" : "s"} ready`
+          : `${folder.audio.length} file${folder.audio.length === 1 ? "" : "s"}${name === "rare" ? " · rarely picked" : ""}`;
+        return `
+          <div class="content-row" style="padding-left:${depth * 22}px">
+            ${isType ? `<i class="dot" style="background:${typeColor(folder.path)}"></i>` : `<span class="muted">└</span>`}
+            <span class="folder">${esc(name)}</span>
+            <span class="count">${count}</span>
+            ${unprocessed ? `<span class="new" title="Run npm run pipeline to process them">${unprocessed} new, not processed yet</span>` : ""}
+            <button data-action="new-subfolder" data-path="${esc(folder.path)}">+ Subfolder</button>
+            <button data-action="open-folder" data-path="${esc(folder.path)}">Open</button>
+          </div>`;
+      };
+      const types = state.folders.filter(f => !f.path.includes("/"));
+      $("content").innerHTML = types.length ? types.map(type => `
+        <div class="content-type">
+          ${row(type, 0)}
+          ${state.folders.filter(f => f.path.startsWith(type.path + "/")).map(f => row(f, f.path.split("/").length - 1)).join("")}
+        </div>`).join("") : `<p class="muted">No folders in content/ yet.</p>`;
+    }
+
+    async function postJson(url, body) {
+      const res = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+      const out = await res.json();
+      if (!res.ok) throw new Error(out.errors?.join("\n") ?? res.statusText);
+      return out;
+    }
+
+    // Folder names are type and tag names, so nudge input into the allowed form
+    const toFolderName = input => input.trim().toLowerCase().replace(/[\s_]+/g, "-");
+
+    async function createFolder(path) {
+      try {
+        setContent(await postJson("/api/folders", { path }));
+        toast(`Created content/${path}. Add audio files to it, then run npm run pipeline.`);
+        return true;
+      } catch (err) {
+        toast(`Couldn't create content/${path}:\n${err.message}`, true);
+        return false;
+      }
+    }
+
+    async function promptNewType() {
+      const input = prompt("Name for the new type of content (becomes a folder in content/), e.g. \"jingle\" or \"late-night\":");
+      if (!input) return null;
+      const name = toFolderName(input);
+      return (await createFolder(name)) ? name : null;
     }
 
     function typeColor(type) {
       if (TYPE_COLORS[type]) return TYPE_COLORS[type];
-      const extra = [...new Set(state.tracks.map(t => t.category))].filter(t => !TYPE_COLORS[t]);
+      const extra = allTypes().filter(t => !TYPE_COLORS[t]);
       return EXTRA_TYPE_COLORS[Math.max(0, extra.indexOf(type)) % EXTRA_TYPE_COLORS.length];
     }
 
@@ -546,7 +635,7 @@
 
     function slotRow(slot, i, count) {
       const pool = getPool(catalog(), slot);
-      const types = [...new Set([...BASE_TYPES, ...state.tracks.map(t => t.category), slot.type])];
+      const types = allTypes(slot.type);
       const tags = [...new Set([...tagsFor(slot.type), ...(slot.tags ?? [])])]; // keep unknown tags removable
       const choices = state.tracks.filter(t => t.category === slot.type).sort((a, b) => a.name.localeCompare(b.name));
       // Several clips can share a name (e.g. "Station ID"), so add the file name to tell them apart
@@ -565,6 +654,7 @@
         <li class="slot" data-index="${i}">
           <select data-action="type" aria-label="Slot type">
             ${types.map(t => `<option ${t === slot.type ? "selected" : ""}>${esc(t)}</option>`).join("")}
+            <option value="${NEW_TYPE}">+ New type…</option>
           </select>
           <div class="tags">${pick}${slot.file ? "" : tagChips}</div>
           <span class="pool ${pool.length ? "" : "empty"}" title="${esc(pool.map(t => t.name).join("\n"))}">
@@ -733,6 +823,21 @@
         if (tags.length) slot.tags = tags; else delete slot.tags;
         changed();
       },
+      "new-type": async () => { if (await promptNewType()) render(); },
+      "new-subfolder": async el => {
+        const parent = el.dataset.path;
+        const input = prompt(`Name for a new subfolder of ${parent} (becomes a tag), e.g. "late-night" or "rare":`);
+        if (input && await createFolder(`${parent}/${toFolderName(input)}`)) render();
+      },
+      "open-folder": async el => {
+        try { await postJson("/api/open", { path: el.dataset.path }); }
+        catch (err) { toast(err.message, true); }
+      },
+      "refresh-content": async () => {
+        setContent(await (await fetch("/api/content")).json());
+        render();
+        toast("Content refreshed.");
+      },
       "prev-day": () => { state.day = (state.day + state.days - 1) % state.days; renderPreview(); },
       "next-day": () => { state.day = (state.day + 1) % state.days; renderPreview(); },
       "today": () => { state.day = todayIndex(); scrolledToNow = false; renderPreview(); },
@@ -759,6 +864,13 @@
       const el = e.target;
       if (el.dataset.action === "type") {
         const slot = state.wheels[wheelOf(el)][slotIndexOf(el)];
+        if (el.value === NEW_TYPE) {
+          promptNewType().then(name => {
+            if (name) { slot.type = name; delete slot.tags; delete slot.file; changed(); }
+            else render(); // put the dropdown back
+          });
+          return;
+        }
         slot.type = el.value;
         delete slot.tags; // tags and a chosen track belong to the old type
         delete slot.file;
