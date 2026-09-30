@@ -116,3 +116,17 @@ export function buildSchedule(catalog, wheels, { onWarn = msg => console.warn(` 
   // wheels stay aligned to the time of day on every loop
   return { epoch: EPOCH.toISOString(), totalSeconds: targetSeconds, entries: schedule };
 }
+
+// Same layout as the hand-written file: one slot / schedule entry per line
+export function formatWheels(wheels) {
+  const { wheels: named, schedule, ...rest } = wheels;
+  if (Object.keys(rest).length) return JSON.stringify(wheels, null, 2) + "\n";
+
+  const value = v => Array.isArray(v) ? `[${v.map(x => JSON.stringify(x)).join(", ")}]` : JSON.stringify(v);
+  const inline = obj => `{ ${Object.entries(obj).map(([k, v]) => `${JSON.stringify(k)}: ${value(v)}`).join(", ")} }`;
+  const list = (items, indent) =>
+    `[\n${items.map(item => `${indent}  ${inline(item)}`).join(",\n")}\n${indent}]`;
+
+  const wheelLines = Object.entries(named).map(([name, slots]) => `    ${JSON.stringify(name)}: ${list(slots, "    ")}`);
+  return `{\n  "wheels": {\n${wheelLines.join(",\n")}\n  },\n  "schedule": ${list(schedule, "  ")}\n}\n`;
+}

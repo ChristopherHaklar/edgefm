@@ -26,12 +26,20 @@
     button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }
     .muted { color: var(--muted); }
 
-    header { position: sticky; top: 0; z-index: 2; display: flex; align-items: center; gap: 10px; padding: 12px 16px;
+    header { position: sticky; top: 0; z-index: 2; display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 12px 16px;
              background: var(--panel); border-bottom: 1px solid var(--line); }
     header h1 { margin: 0; font: 600 16px var(--mono); letter-spacing: .15em; flex: 1; }
     header h1 span { color: var(--muted); font-weight: 400; letter-spacing: .05em; }
     #status { color: var(--muted); font-size: 13px; }
     #status.dirty { color: var(--warn); }
+    .file-actions { display: flex; gap: 6px; padding-right: 10px; border-right: 1px solid var(--line); }
+    dialog { width: min(760px, calc(100vw - 32px)); max-height: 85vh; padding: 0; border: 1px solid var(--line); border-radius: 10px;
+             background: var(--panel); color: var(--text); }
+    dialog::backdrop { background: rgb(0 0 0 / .55); }
+    .dialog-head { display: flex; align-items: center; gap: 8px; padding: 12px 14px; border-bottom: 1px solid var(--line); }
+    .dialog-head h2 { margin: 0; font: 600 14px var(--mono); }
+    .dialog-head .muted { flex: 1; font-size: 12px; }
+    dialog pre { margin: 0; padding: 14px; overflow: auto; max-height: calc(85vh - 60px); font: 12px/1.5 var(--mono); tab-size: 2; }
     #toast { margin: 12px 0 0; padding: 8px 12px; border-radius: 6px; white-space: pre-line; }
     #toast:empty { display: none; }
     #toast.ok { background: var(--soft); }
@@ -129,10 +137,26 @@
   <header>
     <h1>EDGE FM <span>scheduler</span></h1>
     <span id="status"></span>
+    <div class="file-actions">
+      <button id="view-file">View file</button>
+      <button id="download">Download</button>
+      <button id="import">Import</button>
+      <input type="file" id="import-file" accept=".json,application/json" hidden>
+    </div>
     <button id="revert">Revert</button>
     <button id="save" class="primary">Save</button>
   </header>
   <div id="toast"></div>
+
+  <dialog id="file-dialog" aria-labelledby="file-title">
+    <div class="dialog-head">
+      <h2 id="file-title">wheels.json</h2>
+      <span class="muted" id="file-note"></span>
+      <button id="copy-file">Copy</button>
+      <button id="close-file">Close</button>
+    </div>
+    <pre id="file-view"></pre>
+  </dialog>
 
   <main>
     <section class="col">
@@ -173,7 +197,7 @@
   </main>
 
   <script type="module">
-    import { buildSchedule, getPool, validateWheels, wheelForHour } from "/schedule.js";
+    import { buildSchedule, formatWheels, getPool, validateWheels, wheelForHour } from "/schedule.js";
 
     const DAY = 24 * 60 * 60;
     const COLORS = ["#2f6fe4", "#d98a1c", "#2c9c72", "#a64fc2", "#d4493f", "#1f95ad", "#7d7428", "#c4507f"];
@@ -215,17 +239,21 @@
     const currentJson = () => ({ wheels: state.wheels, schedule: scheduleFromHours(state.hourMap) });
     const isDirty = () => JSON.stringify(currentJson()) !== state.saved;
 
+    function applyWheels(json) {
+      state.wheels = json.wheels ?? {};
+      state.hourMap = Array.from({ length: 24 }, (_, h) => wheelForHour(json, h));
+      if (!(state.brush in state.wheels)) state.brush = Object.keys(state.wheels)[0];
+    }
+
     async function load() {
       const res = await fetch("/api/state");
       const s = await res.json();
-      state.wheels = s.wheels.wheels ?? {};
-      state.hourMap = Array.from({ length: 24 }, (_, h) => wheelForHour(s.wheels, h));
+      applyWheels(s.wheels);
       state.tracks = s.tracks;
       state.catalogMissing = s.catalogMissing;
       state.days = s.days;
       state.epochMs = Date.parse(s.epoch);
       state.saved = JSON.stringify(currentJson());
-      if (!(state.brush in state.wheels)) state.brush = Object.keys(state.wheels)[0];
       state.day = todayIndex();
       render();
     }
@@ -659,6 +687,55 @@
       renderHeader();
       toast("Saved wheels.json. Run `npm run publish` to put the new schedule on air.");
     }
+
+    // --- View / download / import ---
+    // Same formatter the server uses, so this is exactly what Save writes
+    const fileText = () => formatWheels(currentJson());
+
+    $("view-file").addEventListener("click", () => {
+      $("file-view").textContent = fileText();
+      $("file-note").textContent = isDirty() ? "Includes unsaved changes — this is what Save will write" : "Matches the saved file";
+      $("file-dialog").showModal();
+    });
+    $("close-file").addEventListener("click", () => $("file-dialog").close());
+    // Clicking the backdrop closes it too
+    $("file-dialog").addEventListener("click", e => { if (e.target === $("file-dialog")) $("file-dialog").close(); });
+    $("copy-file").addEventListener("click", async () => {
+      try {
+        await navigator.clipboard.writeText(fileText());
+        $("copy-file").textContent = "Copied";
+      } catch {
+        $("copy-file").textContent = "Copy failed";
+      }
+      setTimeout(() => ($("copy-file").textContent = "Copy"), 1500);
+    });
+
+    $("download").addEventListener("click", () => {
+      const url = URL.createObjectURL(new Blob([fileText()], { type: "application/json" }));
+      const a = Object.assign(document.createElement("a"), { href: url, download: "wheels.json" });
+      a.click();
+      URL.revokeObjectURL(url);
+    });
+
+    $("import").addEventListener("click", () => $("import-file").click());
+    $("import-file").addEventListener("change", async e => {
+      const file = e.target.files[0];
+      e.target.value = ""; // allow re-importing the same file
+      if (!file) return;
+
+      let json;
+      try { json = JSON.parse(await file.text()); }
+      catch { return toast(`Couldn't import ${file.name}: it isn't valid JSON.`, true); }
+
+      // Structure only — tracks that don't exist yet just show up as warnings in the preview
+      const { errors } = validateWheels(json);
+      if (errors.length) return toast(`Couldn't import ${file.name}:\n${errors.join("\n")}`, true);
+      if (isDirty() && !confirm("Replace your unsaved changes with the imported file?")) return;
+
+      applyWheels(json);
+      render();
+      toast(`Imported ${file.name}. Check the preview, then Save to write wheels.json.`);
+    });
 
     $("save").addEventListener("click", save);
     $("revert").addEventListener("click", () => { if (confirm("Discard your unsaved changes?")) load(); });
