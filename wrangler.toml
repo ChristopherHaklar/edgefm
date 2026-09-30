@@ -7,5 +7,4 @@ binding = "AUDIO"
 bucket_name = "edgefm-audio"
 
 [vars]
-EPOCH = "2026-01-01T00:00:00Z"
-PUBLIC_URL = "https://audio.edgefm.workers.dev"
+PUBLIC_URL = "https://pub-CHANGEME.r2.dev" # R2 public URL that serves the segments

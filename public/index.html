@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>EdgeFM</title>
-  <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+  <script src="https://cdn.jsdelivr.net/npm/hls.js@1/dist/hls.min.js"></script>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
@@ -60,7 +60,7 @@
       try {
         const res = await fetch(`${WORKER_URL}/now-playing`);
         const data = await res.json();
-        nowPlaying.textContent = data.track ?? "—";
+        nowPlaying.textContent = [data.track, data.artist].filter(Boolean).join(" · ") || "—";
       } catch {}
     }
 

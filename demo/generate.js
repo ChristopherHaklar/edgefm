@@ -7,8 +7,9 @@
 import { spawnSync, execSync } from "child_process";
 import { writeFileSync, mkdirSync, existsSync } from "fs";
 import { join, dirname } from "path";
+import { fileURLToPath } from "url";
 
-const ROOT = new URL("..", import.meta.url).pathname;
+const ROOT = fileURLToPath(new URL("..", import.meta.url));
 
 const tracks = [
   // Music — longer tracks, distinct frequencies

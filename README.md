@@ -31,6 +31,7 @@ Drop audio files into subdirectories under `content/`. The directory name become
 ```
 content/
 ├── music/
+│   ├── crossing/          # tag: crossing (Lud & Schlatt Crossing soundtrack)
 │   ├── upbeat/            # tag: upbeat
 │   ├── chill/             # tag: chill
 │   └── hype/              # tag: hype
@@ -44,11 +45,12 @@ Supported formats: `.mp3`, `.wav`, `.flac`, `.aac`, `.m4a`, `.ogg`
 
 ### Sidecar metadata
 
-Place a `.json` file next to any audio file to override defaults:
+Track names and artists come from the file's ID3/metadata tags when present, falling back to the filename. Place a `.json` file next to any audio file to override defaults:
 
 ```json
 {
   "name": "My Track Title",
+  "artist": "My Artist",
   "weight": 0.05,
   "tags": ["extra-tag"]
 }
@@ -97,13 +99,14 @@ After `apply`:
 
 ### 2. Configure the Worker
 
-Update `wrangler.toml` with your R2 public URL and desired epoch:
+Update `wrangler.toml` with your R2 public URL:
 
 ```toml
 [vars]
-EPOCH      = "2026-01-01T00:00:00Z"   # Station start time — don't change once live
 PUBLIC_URL = "https://pub-XXXX.r2.dev" # Your R2 public URL from step 1
 ```
+
+The station start time is `EPOCH` in `pipeline/index.js` — don't change it once live.
 
 Update `public/index.html` — replace `REPLACE_WITH_WORKER_URL` with your Worker URL
 (`https://edgefm.<your-subdomain>.workers.dev`).
