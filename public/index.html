@@ -4,6 +4,11 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>EdgeFM</title>
+  <!-- PNG first with sizes, so browsers that support SVG icons pick the SVG -->
+  <link rel="icon" href="favicon-32.png" type="image/png" sizes="32x32">
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="apple-touch-icon.png">
+  <meta name="theme-color" content="#141414">
   <script src="https://cdn.jsdelivr.net/npm/hls.js@1/dist/hls.min.js"></script>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -18,14 +23,14 @@
       min-height: 100vh;
       gap: 1.5rem;
     }
-    h1 { font-size: 2rem; letter-spacing: 0.2em; }
+    h1 img { display: block; width: min(268px, 80vw); height: auto; }
     #now-playing { font-size: 0.9rem; color: #aaa; min-height: 1.2em; }
     audio { width: 320px; }
     #status { font-size: 0.75rem; color: #555; }
   </style>
 </head>
 <body>
-  <h1>EDGE FM</h1>
+  <h1><img src="logo.svg" alt="EdgeFM" width="268" height="64"></h1>
   <div id="now-playing">Loading...</div>
   <audio id="player" controls autoplay></audio>
   <div id="status"></div>

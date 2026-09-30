@@ -1,3 +1,5 @@
+<p align="center"><img src="public/logo.svg" alt="EdgeFM" width="320"></p>
+
 # EdgeFM
 
 An internet radio station that runs entirely on Cloudflare's free tier. Streams pre-planned content via HLS, with clock wheel scheduling and deterministic track selection — all listeners hear the same thing at the same time.

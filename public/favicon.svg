@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <title>EdgeFM</title>
+  <!-- Dark tile so the mark reads on light and dark browser tabs -->
+  <rect width="64" height="64" rx="14" fill="#141414"/>
+  <!-- An E made of level-meter bars; the middle bar ends in an "on air" dot -->
+  <g fill="none" stroke="#ff6a2b" stroke-width="8" stroke-linecap="round">
+    <path d="M17 16 V48"/>
+    <path d="M17 16 H47"/>
+    <path d="M17 32 H33"/>
+    <path d="M17 48 H41"/>
+  </g>
+  <circle cx="45" cy="32" r="5" fill="#ff6a2b"/>
+</svg>

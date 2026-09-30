@@ -20,6 +20,7 @@ const PORT = Number(process.env.PORT ?? 8790);
 const STATIC = {
   "/": [join(ROOT, "scheduler", "index.html"), "text/html; charset=utf-8"],
   "/schedule.js": [join(ROOT, "public", "lib", "schedule.js"), "text/javascript; charset=utf-8"],
+  "/favicon.svg": [join(ROOT, "public", "favicon.svg"), "image/svg+xml"],
 };
 
 // Re-read on every request so a pipeline run is picked up without restarting

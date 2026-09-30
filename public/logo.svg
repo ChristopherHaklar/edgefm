@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 268 64">
+  <title>EdgeFM</title>
+  <!-- Mark: an E made of level-meter bars; the middle bar ends in an "on air" dot.
+       All orange so it works on light and dark backgrounds alike -->
+  <g fill="none" stroke="#ff6a2b" stroke-width="8" stroke-linecap="round">
+    <path d="M8 8 V56"/>
+    <path d="M8 8 H50"/>
+    <path d="M8 32 H30"/>
+    <path d="M8 56 H40"/>
+  </g>
+  <circle cx="44" cy="32" r="6" fill="#ff6a2b"/>
+  <text x="74" y="45" fill="#ff6a2b" font-family="ui-monospace, 'Cascadia Code', Menlo, Consolas, monospace"
+        font-size="34" font-weight="700" letter-spacing="4">EDGE FM</text>
+</svg>

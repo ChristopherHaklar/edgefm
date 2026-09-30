@@ -4,6 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>EdgeFM Scheduler</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
   <style>
     :root {
       --bg: #f6f6f4; --panel: #ffffff; --line: #e2e1dc; --text: #1c1c1a; --muted: #6d6c66;
@@ -28,7 +29,8 @@
 
     header { position: sticky; top: 0; z-index: 2; display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 12px 16px;
              background: var(--panel); border-bottom: 1px solid var(--line); }
-    header h1 { margin: 0; font: 600 16px var(--mono); letter-spacing: .15em; flex: 1; }
+    header h1 { display: flex; align-items: center; gap: 10px; margin: 0; font: 600 16px var(--mono); letter-spacing: .15em; flex: 1; }
+    header h1 img { width: 26px; height: 26px; }
     header h1 span { color: var(--muted); font-weight: 400; letter-spacing: .05em; }
     #status { color: var(--muted); font-size: 13px; }
     #status.dirty { color: var(--warn); }
@@ -153,7 +155,7 @@
 </head>
 <body>
   <header>
-    <h1>EDGE FM <span>scheduler</span></h1>
+    <h1><img src="/favicon.svg" alt="">EDGE FM <span>scheduler</span></h1>
     <span id="status"></span>
     <div class="file-actions">
       <button id="view-file">View file</button>
