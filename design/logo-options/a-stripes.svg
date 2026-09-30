@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 460 210">
+  <title>EdgeFM — option A (striped outline, after 1970s AM station logos)</title>
+  <defs>
+    <text id="word" x="218" y="126" text-anchor="middle" font-family="'Arial Black', 'Segoe UI Black', Impact, sans-serif"
+          font-size="118" font-weight="900" letter-spacing="-3">EDGE</text>
+  </defs>
+  <rect width="460" height="210" fill="#1f5fb8"/>
+  <!-- Echo layers, back to front: a fat white shape with a slightly thinner blue one on top
+       leaves a thin white rim, so the letters trail off in stripes -->
+  <g stroke-linejoin="round">
+    <use href="#word" x="21" y="21" fill="#fff" stroke="#fff" stroke-width="10"/>
+    <use href="#word" x="21" y="21" fill="#1f5fb8" stroke="#1f5fb8" stroke-width="5.5"/>
+    <use href="#word" x="14" y="14" fill="#fff" stroke="#fff" stroke-width="10"/>
+    <use href="#word" x="14" y="14" fill="#1f5fb8" stroke="#1f5fb8" stroke-width="5.5"/>
+    <use href="#word" x="7" y="7" fill="#fff" stroke="#fff" stroke-width="10"/>
+    <use href="#word" x="7" y="7" fill="#1f5fb8" stroke="#1f5fb8" stroke-width="5.5"/>
+    <!-- The letters themselves, rounded by a stroke of the same colour -->
+    <use href="#word" fill="#fff" stroke="#fff" stroke-width="8"/>
+  </g>
+  <text x="408" y="188" text-anchor="end" fill="#fff" font-family="'Arial Black', 'Segoe UI Black', Impact, sans-serif"
+        font-size="24" font-weight="900" letter-spacing="1">FM · 24/7</text>
+</svg>

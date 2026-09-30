@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <title>EdgeFM — option A icon</title>
+  <defs>
+    <text id="e" x="13" y="47" font-family="'Arial Black', 'Segoe UI Black', Impact, sans-serif" font-size="46" font-weight="900">E</text>
+  </defs>
+  <rect width="64" height="64" rx="12" fill="#1f5fb8"/>
+  <g stroke-linejoin="round">
+    <use href="#e" x="6" y="6" fill="#fff" stroke="#fff" stroke-width="5"/>
+    <use href="#e" x="6" y="6" fill="#1f5fb8" stroke="#1f5fb8" stroke-width="2.5"/>
+    <use href="#e" x="3" y="3" fill="#fff" stroke="#fff" stroke-width="5"/>
+    <use href="#e" x="3" y="3" fill="#1f5fb8" stroke="#1f5fb8" stroke-width="2.5"/>
+    <use href="#e" fill="#fff" stroke="#fff" stroke-width="3"/>
+  </g>
+</svg>
