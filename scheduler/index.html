@@ -69,12 +69,16 @@
     .clock { flex: 3 1 300px; max-width: 460px; margin: 0 auto 8px; text-align: center; }
     .clock svg { display: block; width: 100%; height: auto; }
     .clock path { stroke: var(--panel); stroke-width: 1; }
-    .clock path.hl { stroke: var(--text); stroke-width: 2; }
+    .clock path.hl { stroke: var(--text); stroke-width: 1.5; }
+    .clock path.hov { stroke: var(--text); stroke-width: 2.5; filter: brightness(1.3); }
+    .clock svg.pointing { cursor: pointer; }
     .clock .n { fill: #fff; font: 600 10px var(--mono); pointer-events: none; }
     .clock .tick { stroke: var(--muted); }
     .clock .mins { fill: var(--muted); font: 9px var(--mono); }
-    .clock .mid { fill: var(--text); font: 600 13px var(--mono); }
-    .clock .mid-sub { fill: var(--muted); font: 8px system-ui, sans-serif; }
+    .clock .mid { fill: var(--text); font: 600 12px var(--mono); }
+    .clock .mid-sub { fill: var(--muted); font: 7.5px system-ui, sans-serif; }
+    .slot.flash { animation: flash 1.2s ease-out; }
+    @keyframes flash { from { background: var(--now); } to { background: transparent; } }
     .clock p { margin: 2px 0 0; font-size: 12px; color: var(--muted); }
     .legend { display: flex; flex-wrap: wrap; justify-content: center; gap: 2px 10px; font-size: 12px; margin-top: 4px; }
     .legend span { display: inline-flex; align-items: center; gap: 4px; }
@@ -110,6 +114,8 @@
     .hour-head b { font-family: var(--mono); }
     .row { display: grid; grid-template-columns: 70px minmax(0, 1fr) auto 44px; gap: 10px; padding: 3px 4px; font-size: 13px; }
     .row.now { background: var(--now); border-radius: 4px; }
+    .onair { display: none; font-size: 11px; font-weight: 600; color: var(--warn); margin-right: 6px; }
+    .row.now .onair { display: inline; }
     .row time, .row .dur { font-family: var(--mono); color: var(--muted); }
     .row .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .badge { font-size: 11px; color: var(--muted); border: 1px solid var(--line); border-radius: 999px; padding: 0 6px; }
@@ -155,6 +161,7 @@
             <button data-action="today">Today</button>
           </div>
         </div>
+        <p class="hint">The highlighted row is what's on air right now (if this schedule were live). It follows the clock while the page is open.</p>
         <ul id="issues" class="issues"></ul>
         <div id="timeline" class="timeline"></div>
       </div>
@@ -235,6 +242,7 @@
       renderHeader();
       renderHours();
       renderWheels();
+      wireClocks();
       schedulePreview();
     }
 
@@ -275,6 +283,68 @@
       return pool.reduce((s, t) => s + (t.weight ?? 1) * t.duration, 0) / total;
     }
 
+    const CLOCK = { HOUR: 3600, C: 100, R: 72, R0: 32 };
+    const MIN_TARGET = 90; // seconds: short slices (bumpers, IDs) are hit-tested as at least this wide
+
+    // Which slice is under the pointer? Short slices get a wider target and win over
+    // their neighbours inside it, so a 10s bumper is as easy to hit as a 90s track.
+    function sliceAt(svg, e) {
+      const box = svg.getBoundingClientRect(), scale = box.width / 200;
+      const dx = (e.clientX - box.left) / scale - CLOCK.C, dy = (e.clientY - box.top) / scale - CLOCK.C;
+      const dist = Math.hypot(dx, dy);
+      if (dist < CLOCK.R0 || dist > CLOCK.R + 12) return null;
+      const sec = ((Math.atan2(dx, -dy) / (2 * Math.PI) + 1) % 1) * CLOCK.HOUR;
+      let best = null;
+      for (const path of svg.querySelectorAll("path[data-slot]")) {
+        const t = +path.dataset.t, end = +path.dataset.end, grow = Math.max(0, (MIN_TARGET - (end - t)) / 2);
+        // Check either side of :00 too, so targets near the top wrap round
+        const hit = [sec, sec - CLOCK.HOUR, sec + CLOCK.HOUR].some(x => x >= t - grow && x < end + grow);
+        if (hit && (!best || end - t < best.end - best.t)) best = { path, t, end };
+      }
+      return best?.path ?? null;
+    }
+
+    function setReadout(svg, lines) {
+      svg.querySelectorAll(".readout text").forEach((el, i) => (el.textContent = lines[i] ?? ""));
+    }
+
+    function highlightSlot(wheel, index) {
+      document.querySelectorAll(".hl, .hov").forEach(el => el.classList.remove("hl", "hov"));
+      if (!wheel || index == null) return;
+      wheel.querySelectorAll(`[data-slot="${index}"], .slot[data-index="${index}"]`).forEach(el => el.classList.add("hl"));
+    }
+
+    function wireClocks() {
+      for (const svg of document.querySelectorAll(".clock svg")) {
+        const wheel = svg.closest(".wheel");
+        const reset = () => {
+          highlightSlot(null);
+          svg.classList.remove("pointing");
+          setReadout(svg, JSON.parse(svg.querySelector(".readout").dataset.default));
+        };
+        svg.addEventListener("mousemove", e => {
+          const path = sliceAt(svg, e);
+          if (!path) return reset();
+          const d = path.dataset;
+          highlightSlot(wheel, d.slot);
+          path.classList.add("hov");
+          svg.classList.add("pointing");
+          setReadout(svg, [`Slot ${+d.slot + 1}`, d.type, `~${mmss(+d.len)} · at :${pad(Math.floor(+d.t / 60))}`]);
+        });
+        svg.addEventListener("mouseleave", reset);
+        svg.addEventListener("click", e => {
+          const path = sliceAt(svg, e);
+          const row = path && wheel.querySelector(`.slot[data-index="${path.dataset.slot}"]`);
+          if (!row) return;
+          row.scrollIntoView({ block: "nearest", behavior: "smooth" });
+          row.querySelector("select").focus({ preventScroll: true });
+          row.classList.remove("flash");
+          void row.offsetWidth; // restart the animation
+          row.classList.add("flash");
+        });
+      }
+    }
+
     // Radio-style clock: the wheel's slots laid round one hour, repeating until it's full
     function clockSvg(slots) {
       const playable = slots
@@ -283,7 +353,7 @@
         .map(p => ({ ...p, seconds: expectedSeconds(p.pool) }));
       if (!playable.length) return "";
 
-      const HOUR = 3600, C = 100, R = 72, R0 = 24;
+      const { HOUR, C, R, R0 } = CLOCK;
       const xy = (r, sec) => {
         const a = (sec / HOUR) * 2 * Math.PI;
         return [C + r * Math.sin(a), C - r * Math.cos(a)].map(v => v.toFixed(2));
@@ -295,12 +365,9 @@
         const p = playable[n % playable.length];
         const end = Math.min(HOUR - 0.01, t + p.seconds); // a full 360° arc would collapse to a point
         const large = end - t > HOUR / 2 ? 1 : 0;
-        const tags = p.slot.tags?.length ? ` [${p.slot.tags.join(", ")}]` : "";
-        slices += `<path data-slot="${p.i}" fill="${typeColor(p.slot.type)}" opacity="${n < playable.length ? 1 : 0.55}"
-          d="M${at(R, t)} A${R} ${R} 0 ${large} 1 ${at(R, end)} L${at(R0, end)} A${R0} ${R0} 0 ${large} 0 ${at(R0, t)}Z">
-          <title>Slot ${p.i + 1}: ${esc(p.slot.type)}${esc(tags)}
-~${mmss(p.seconds)} (average of ${p.pool.length} track${p.pool.length > 1 ? "s" : ""})
-from :${pad(Math.floor(t / 60))}</title></path>`;
+        slices += `<path data-slot="${p.i}" data-t="${t.toFixed(2)}" data-end="${end.toFixed(2)}" data-len="${p.seconds.toFixed(1)}"
+          data-type="${esc(p.slot.type)}" fill="${typeColor(p.slot.type)}" opacity="${n < playable.length ? 1 : 0.55}"
+          d="M${at(R, t)} A${R} ${R} 0 ${large} 1 ${at(R, end)} L${at(R0, end)} A${R0} ${R0} 0 ${large} 0 ${at(R0, t)}Z"/>`;
         if ((end - t) / HOUR * 360 >= 7) {
           const [x, y] = xy((R + R0) / 2 + 6, (t + end) / 2);
           slices += `<text class="n" x="${x}" y="${y}" text-anchor="middle" dominant-baseline="central">${p.i + 1}</text>`;
@@ -326,8 +393,11 @@ from :${pad(Math.floor(t / 60))}</title></path>`;
         <figure class="clock">
           <svg viewBox="0 0 200 200" role="img" aria-label="Estimated hour for this wheel">
             ${ticks}${slices}
-            <text class="mid" x="${C}" y="${C - 3}" text-anchor="middle">${(HOUR / pass).toFixed(1)}×</text>
-            <text class="mid-sub" x="${C}" y="${C + 9}" text-anchor="middle">per hour</text>
+            <g class="readout" data-default="${esc(JSON.stringify([`${(HOUR / pass).toFixed(1)}×`, "per hour", ""]))}">
+              <text class="mid" x="${C}" y="${C - 4}" text-anchor="middle">${(HOUR / pass).toFixed(1)}×</text>
+              <text class="mid-sub" x="${C}" y="${C + 7}" text-anchor="middle">per hour</text>
+              <text class="mid-sub" x="${C}" y="${C + 16}" text-anchor="middle"></text>
+            </g>
           </svg>
           <div class="legend">${types.map(t => `<span><i class="dot" style="background:${typeColor(t)}"></i>${esc(t)}</span>`).join("")}</div>
           <p>One pass ≈ ${mmss(pass)}${skipped ? ` · ${skipped} empty slot${skipped > 1 ? "s" : ""} skipped` : ""}</p>
@@ -381,6 +451,15 @@ from :${pad(Math.floor(t / 60))}</title></path>`;
 
     // --- Preview (same scheduling code the pipeline runs) ---
     let previewTimer, scrolledToNow = false;
+
+    // Move the on-air highlight along while the page is open
+    setInterval(() => {
+      if (state.day !== todayIndex()) return;
+      const now = loopSecondsNow();
+      for (const row of $("timeline").querySelectorAll(".row")) {
+        row.classList.toggle("now", now >= +row.dataset.t && now < +row.dataset.end);
+      }
+    }, 5000);
     function schedulePreview() {
       clearTimeout(previewTimer);
       previewTimer = setTimeout(renderPreview, 120);
@@ -426,10 +505,10 @@ from :${pad(Math.floor(t / 60))}</title></path>`;
           lastHour = hour;
         }
         const playing = now >= e.t && now < e.t + track.duration;
-        html += `<div class="row ${playing ? "now" : ""}">
+        html += `<div class="row ${playing ? "now" : ""}" data-t="${e.t}" data-end="${e.t + track.duration}">
                    <time>${clock(e.t)}</time>
                    <span class="name">${esc(track.name)}${track.artist ? ` <span class="muted">· ${esc(track.artist)}</span>` : ""}</span>
-                   <span>${track.category === "music" ? "" : `<span class="badge">${esc(track.category)}</span>`}</span>
+                   <span><span class="onair">● ON AIR</span>${track.category === "music" ? "" : `<span class="badge">${esc(track.category)}</span>`}</span>
                    <span class="dur">${mmss(track.duration)}</span>
                  </div>`;
       }
@@ -520,13 +599,10 @@ from :${pad(Math.floor(t / 60))}</title></path>`;
       if (el && actions[el.dataset.action] && !el.disabled) actions[el.dataset.action](el);
     });
 
-    // Hovering a clock slice highlights its slot row, and vice versa
+    // Hovering a slot row lights up its slices on the clock
     document.addEventListener("mouseover", e => {
-      document.querySelectorAll(".hl").forEach(el => el.classList.remove("hl"));
-      const wheel = e.target.closest(".wheel");
-      const index = e.target.closest("[data-slot]")?.dataset.slot ?? e.target.closest(".slot")?.dataset.index;
-      if (!wheel || index == null) return;
-      wheel.querySelectorAll(`[data-slot="${index}"], .slot[data-index="${index}"]`).forEach(el => el.classList.add("hl"));
+      if (e.target.closest(".clock svg")) return;
+      highlightSlot(e.target.closest(".wheel"), e.target.closest(".slot")?.dataset.index);
     });
 
     document.addEventListener("change", e => {
