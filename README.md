@@ -12,9 +12,15 @@ An internet radio station that runs entirely on Cloudflare's free tier. Streams 
 ## Architecture
 
 ```
-content/                   # Your audio files, organised by category
+content/                   # Your audio files: one folder per type, subfolders are tags
 demo/generate.js           # Generates synthetic demo audio for local testing
+demo/voices.js             # Generates text-to-speech bumpers, DJ breaks, promos and talk
 pipeline/index.js          # Local tool: ffmpeg → R2 → catalog + schedule
+pipeline/schedule.js       # Clock wheel scheduling (shared with the scheduler page)
+pipeline/content.js        # content/ folder conventions
+pipeline/r2.js             # R2 uploads, deletes and the in-bucket manifest
+pipeline/prune.js          # Deletes R2 segments nothing uses any more
+scheduler/                 # Local web tool for editing wheels.json
 src/worker.js              # Cloudflare Worker: serves /stream.m3u8 and /now-playing
 src/catalog.json           # Generated — track metadata bundled with Worker
 src/schedule.json          # Generated — 30-day pre-computed slot schedule
@@ -101,7 +107,9 @@ terraform apply
 This creates the `edgefm-audio` R2 bucket (with CORS configured), the Cloudflare Pages project for the web player, and a billing notification policy that emails you the moment any spend is detected.
 
 After `apply`:
-- Go to Cloudflare dashboard → R2 → `edgefm-audio` → Settings and enable the public development URL. Copy the resulting `pub-XXXX.r2.dev` URL.
+- Give the bucket a public URL (Cloudflare dashboard → R2 → `edgefm-audio` → Settings):
+  - **Production:** connect a **custom domain** (e.g. `audio.example.com`; the domain must be on Cloudflare). This puts Cloudflare's CDN cache in front of the segments.
+  - **Testing only:** enable the public development URL (`pub-XXXX.r2.dev`). It's rate-limited and not cached, so don't point listeners at it.
 - Set a hard spend cap: Cloudflare dashboard → Billing → Spend Management → set limit to **$0**. Terraform cannot enforce this programmatically — it must be set manually. This is your backstop against runaway costs.
 
 ### 2. Configure the Worker
@@ -110,7 +118,7 @@ Update `wrangler.toml` with your R2 public URL:
 
 ```toml
 [vars]
-PUBLIC_URL = "https://pub-XXXX.r2.dev" # Your R2 public URL from step 1
+PUBLIC_URL = "https://audio.example.com" # The bucket's custom domain (or r2.dev URL for testing) from step 1
 ```
 
 The station start time is `EPOCH` in `pipeline/schedule.js` — don't change it once live.
@@ -135,6 +143,15 @@ npm run publish
 
 `npm run publish` runs the full pipeline — segments audio with ffmpeg, uploads new segments to R2, generates the catalog and schedule, then deploys the Worker. Run it again whenever you add or change content.
 
+### How content maps to R2
+
+R2 has no folders for your content. Each track's ID is a hash of its audio (plus the encoding settings), and its segments are stored as `segments/<id>/<id>_000.ts`, `_001.ts`, and so on. Folders only decide a track's type and tags, which live in the catalog built into the Worker. So:
+
+- **Moving or renaming a file** keeps its ID: nothing is re-encoded or re-uploaded.
+- **Changing a file's audio** gives it a new ID and new keys. Segments never change once uploaded, so they're served with `Cache-Control: public, max-age=31536000, immutable` and the CDN can keep them forever.
+- The pipeline keeps a list of every key it has uploaded in the bucket (`edgefm-manifest.json`) and skips those next time. `npm run pipeline -- --reupload` uploads everything again.
+- Old segments are never deleted automatically. After publishing, `npm run prune` lists segments nothing uses any more, and `npm run prune -- --yes` deletes them.
+
 ## Day-to-day commands
 
 | Command | What it does |
@@ -144,6 +161,7 @@ npm run publish
 | `npm run pipeline` | Segment + upload + generate catalog/schedule only |
 | `npm run dev` | Local Worker dev server (segment URLs still point at R2) |
 | `npm run scheduler` | Web tool for editing `wheels.json` with a live schedule preview |
+| `npm run prune` | List R2 segments no track uses any more (`-- --yes` deletes them; run after publishing) |
 
 ## Clock wheel
 

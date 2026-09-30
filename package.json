@@ -9,10 +9,11 @@
     "pipeline": "node pipeline/index.js",
     "demo": "node demo/generate.js",
     "demo:voices": "node demo/voices.js",
-    "scheduler": "node scheduler/server.js"
+    "scheduler": "node scheduler/server.js",
+    "prune": "node pipeline/prune.js"
   },
   "devDependencies": {
-    "wrangler": "^3.0.0"
+    "wrangler": "^4.0.0"
   },
   "dependencies": {}
 }

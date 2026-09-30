@@ -2,24 +2,27 @@
 // Scans content/, segments all audio with ffmpeg, builds catalog + schedule,
 // uploads new segments to R2, bundles catalog+schedule into src/ for wrangler deploy.
 
-import { execSync, spawnSync } from "child_process";
+import { spawnSync } from "child_process";
 import { readFileSync, writeFileSync, readdirSync, existsSync, mkdirSync, rmSync } from "fs";
 import { join, basename, extname, relative, sep } from "path";
 import { fileURLToPath } from "url";
 import { createHash } from "crypto";
 import { buildSchedule, SCHEDULE_DAYS } from "./schedule.js";
 import { isAudio, RARE_WEIGHT } from "./content.js";
+import { readManifestOrExit, writeManifest, putSegment } from "./r2.js";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const CONTENT_DIR = join(ROOT, "content");
 const SEGMENTS_DIR = join(ROOT, "segments");
-const UPLOADED_FILE = join(SEGMENTS_DIR, "uploaded.json");
 const WHEELS_FILE = join(ROOT, "wheels.json");
 const CATALOG_OUT = join(ROOT, "src", "catalog.json");
 const SCHEDULE_OUT = join(ROOT, "src", "schedule.json");
 
 const SEGMENT_DURATION = 10; // seconds
-const R2_BUCKET = "edgefm-audio";
+// Part of every track ID: bump it whenever the ffmpeg settings in segmentTrack
+// change, so re-encoded segments get new R2 keys instead of stale cached ones
+const SEGMENT_FORMAT = "aac-128k-44100-stereo-10s-v1";
+const REUPLOAD = process.argv.includes("--reupload");
 
 // --- Audio processing ---
 function probe(filePath) {
@@ -75,6 +78,7 @@ function segmentTrack(filePath, outDir, trackId, rawDuration) {
 // --- Scan content directory ---
 function scanContent() {
   const catalog = { tracks: [] };
+  const seen = new Map(); // track ID → first file with that audio
 
   function scanDir(dir, category, tags = [], defaultWeight = 1.0) {
     if (!existsSync(dir)) return;
@@ -85,11 +89,19 @@ function scanContent() {
         // anything under a "rare" folder is rarely picked
         scanDir(fullPath, category, [...tags, entry.name], entry.name === "rare" ? RARE_WEIGHT : defaultWeight);
       } else if (isAudio(entry.name)) {
-        // Hash the repo-relative path with "/" separators so IDs match across OSes
-        const trackId = createHash("md5")
-          .update(relative(ROOT, fullPath).split(sep).join("/"))
+        // ID from the audio itself (plus encoding settings): moving or renaming a file
+        // keeps its ID and R2 keys, while changing the audio gives new ones
+        const trackId = createHash("sha256")
+          .update(readFileSync(fullPath))
+          .update(SEGMENT_FORMAT)
           .digest("hex")
           .slice(0, 12);
+        const file = relative(CONTENT_DIR, fullPath).split(sep).join("/");
+        if (seen.has(trackId)) {
+          console.warn(`  warning: ${file} is the same audio as ${seen.get(trackId)}, skipping it`);
+          continue;
+        }
+        seen.set(trackId, file);
 
         // Optional sidecar file: track.mp3 → track.json for metadata overrides
         const sidecar = fullPath.replace(/\.[^.]+$/, ".json");
@@ -115,7 +127,7 @@ function scanContent() {
 
         catalog.tracks.push({
           id: trackId,
-          file: relative(CONTENT_DIR, fullPath).split(sep).join("/"), // for slots that name a file
+          file, // for slots that name a file
           name: meta.name ?? info.title ?? basename(entry.name, extname(entry.name)),
           artist: meta.artist ?? info.artist,
           category,
@@ -139,27 +151,37 @@ function scanContent() {
 
 // --- Upload segments to R2 ---
 function uploadSegments(catalog) {
-  // Remember what's already in R2 so re-runs only upload new segments
-  const uploaded = new Set(existsSync(UPLOADED_FILE) ? JSON.parse(readFileSync(UPLOADED_FILE, "utf8")) : []);
-  let skipped = 0;
+  // The manifest in the bucket lists what's already there; --reupload ignores it
+  // (but keeps it, so prune still knows about older segments)
+  const manifest = readManifestOrExit();
+  let skipped = 0, uploaded = 0;
 
   for (const track of catalog.tracks) {
     const outDir = join(SEGMENTS_DIR, track.id);
-    const files = readdirSync(outDir).filter(f => f.endsWith(".ts"));
-    for (const file of files) {
+    let changed = false;
+    for (const file of readdirSync(outDir).filter(f => f.endsWith(".ts"))) {
       const key = `segments/${track.id}/${file}`;
-      if (uploaded.has(key)) { skipped++; continue; }
+      if (manifest.has(key) && !REUPLOAD) { skipped++; continue; }
       console.log(`  uploading ${key}`);
-      execSync(`wrangler r2 object put ${R2_BUCKET}/${key} --file="${join(outDir, file)}" --content-type="video/mp2t"`, {
-        stdio: "inherit",
-        cwd: ROOT,
-      });
-      uploaded.add(key);
+      putSegment(key, join(outDir, file));
+      manifest.add(key);
+      uploaded++;
+      changed = true;
     }
-    writeFileSync(UPLOADED_FILE, JSON.stringify([...uploaded], null, 2));
+    // Record progress per track, so an interrupted run doesn't redo finished tracks
+    if (changed) writeManifest(manifest);
   }
 
-  if (skipped) console.log(`  ${skipped} segments already uploaded`);
+  console.log(`  ${uploaded} uploaded, ${skipped} already in R2`);
+}
+
+// Segment folders for audio that's no longer in content/ (moved files keep their ID)
+function removeStaleSegments(catalog) {
+  if (!existsSync(SEGMENTS_DIR)) return;
+  const ids = new Set(catalog.tracks.map(t => t.id));
+  const stale = readdirSync(SEGMENTS_DIR, { withFileTypes: true }).filter(e => e.isDirectory() && !ids.has(e.name));
+  for (const dir of stale) rmSync(join(SEGMENTS_DIR, dir.name), { recursive: true, force: true });
+  if (stale.length) console.log(`  removed ${stale.length} unused local segment folder${stale.length > 1 ? "s" : ""}`);
 }
 
 // --- Main ---
@@ -167,6 +189,7 @@ console.log("=== edgefm pipeline ===\n");
 
 console.log("[1/4] Scanning and segmenting content...");
 const catalog = scanContent();
+removeStaleSegments(catalog);
 console.log(`  ${catalog.tracks.length} tracks found\n`);
 
 const wheels = JSON.parse(readFileSync(WHEELS_FILE, "utf8"));
@@ -185,4 +208,5 @@ writeFileSync(SCHEDULE_OUT, JSON.stringify(schedule));
 console.log("  wrote src/catalog.json");
 console.log("  wrote src/schedule.json");
 
-console.log("\nDone. Run `wrangler deploy` or `npm run publish` to deploy.\n");
+console.log("\nDone. Run `wrangler deploy` or `npm run publish` to deploy.");
+console.log("After deploying, `npm run prune` lists R2 segments nothing uses any more.\n");
