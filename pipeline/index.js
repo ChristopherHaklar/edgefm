@@ -211,8 +211,9 @@ function buildSchedule(catalog, wheels) {
     slotIndex++;
   }
 
-  // Loop at the end of the last track, not mid-track at exactly SCHEDULE_DAYS
-  return { epoch: EPOCH.toISOString(), totalSeconds: cursor, entries: schedule };
+  // Loop at exactly SCHEDULE_DAYS (cutting the last track short) so hour-based
+  // wheels stay aligned to the time of day on every loop
+  return { epoch: EPOCH.toISOString(), totalSeconds: targetSeconds, entries: schedule };
 }
 
 // --- Upload segments to R2 ---
@@ -251,7 +252,7 @@ const wheels = JSON.parse(readFileSync(WHEELS_FILE, "utf8"));
 
 console.log("[2/4] Building schedule...");
 const schedule = buildSchedule(catalog, wheels);
-console.log(`  ${schedule.entries.length} slots scheduled over ${(schedule.totalSeconds / 86400).toFixed(1)} days\n`);
+console.log(`  ${schedule.entries.length} slots scheduled over ${SCHEDULE_DAYS} days\n`);
 
 console.log("[3/4] Uploading segments to R2...");
 uploadSegments(catalog);
