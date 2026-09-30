@@ -106,7 +106,7 @@ Update `wrangler.toml` with your R2 public URL:
 PUBLIC_URL = "https://pub-XXXX.r2.dev" # Your R2 public URL from step 1
 ```
 
-The station start time is `EPOCH` in `pipeline/index.js` — don't change it once live.
+The station start time is `EPOCH` in `pipeline/schedule.js` — don't change it once live.
 
 Update `public/index.html` — replace `REPLACE_WITH_WORKER_URL` with your Worker URL
 (`https://edgefm.<your-subdomain>.workers.dev`).
@@ -136,10 +136,21 @@ npm run publish
 | `npm run publish` | Full pipeline + Worker deploy |
 | `npm run pipeline` | Segment + upload + generate catalog/schedule only |
 | `npm run dev` | Local Worker dev server (segment URLs still point at R2) |
+| `npm run scheduler` | Web tool for editing `wheels.json` with a live schedule preview |
 
 ## Clock wheel
 
-Edit `wheels.json` to change the slot sequence. Each slot has a `type` matching a content category, and optionally `tags` to filter the pool.
+### Scheduler tool
+
+```bash
+npm run scheduler
+```
+
+Open http://localhost:8790 to edit wheels and assign them to hours of the day, with a day-by-day preview of exactly what will play (it runs the same scheduling code as the pipeline) and play counts for every track. It reads your tracks from `src/catalog.json`, so run `npm run pipeline` once after adding content. Saving writes `wheels.json`; run `npm run publish` to put it on air.
+
+### wheels.json
+
+Or edit `wheels.json` by hand to change the slot sequence. Each slot has a `type` matching a content category, and optionally `tags` to filter the pool.
 
 ```json
 {
@@ -159,7 +170,7 @@ Edit `wheels.json` to change the slot sequence. Each slot has a `type` matching 
 }
 ```
 
-Multiple named wheels with different hour ranges are supported — add entries to `wheels` and split the `hours` ranges in `schedule` to add time-of-day variation.
+Multiple named wheels with different hour ranges are supported — add entries to `wheels` and split the `hours` ranges in `schedule` to add time-of-day variation. Hours are UTC and can be a single hour (`"9"`), a range (`"6-17"`), or a range that wraps past midnight (`"22-5"`). The first matching entry wins; hours with no entry use the `default` wheel.
 
 ## Endpoints
 
