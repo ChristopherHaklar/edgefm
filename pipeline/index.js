@@ -7,9 +7,9 @@ import { readFileSync, writeFileSync, readdirSync, existsSync, mkdirSync, rmSync
 import { join, basename, extname, relative, sep } from "path";
 import { fileURLToPath } from "url";
 import { createHash } from "crypto";
-import { buildSchedule, SCHEDULE_DAYS } from "./schedule.js";
+import { buildSchedule, SCHEDULE_DAYS } from "../public/lib/schedule.js";
 import { isAudio, RARE_WEIGHT } from "./content.js";
-import { readManifestOrExit, writeManifest, putSegment } from "./r2.js";
+import { readManifestOrExit, writeManifest, putSegment, putObject, STATION_KEY, STATION_CACHE_CONTROL } from "./r2.js";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const CONTENT_DIR = join(ROOT, "content");
@@ -17,6 +17,7 @@ const SEGMENTS_DIR = join(ROOT, "segments");
 const WHEELS_FILE = join(ROOT, "wheels.json");
 const CATALOG_OUT = join(ROOT, "src", "catalog.json");
 const SCHEDULE_OUT = join(ROOT, "src", "schedule.json");
+const STATION_OUT = join(ROOT, "src", "station.json");
 
 const SEGMENT_DURATION = 10; // seconds
 // Part of every track ID: bump it whenever the ffmpeg settings in segmentTrack
@@ -198,8 +199,17 @@ console.log("[2/4] Building schedule...");
 const schedule = buildSchedule(catalog, wheels);
 console.log(`  ${schedule.entries.length} slots scheduled over ${SCHEDULE_DAYS} days\n`);
 
+// Everything the web player needs to build the same schedule and playlists itself.
+// One file, so a page never mixes an old catalog with new wheels
+const stationBody = JSON.stringify({ wheels, catalog });
+const station = { version: createHash("sha256").update(stationBody).digest("hex").slice(0, 12), wheels, catalog };
+writeFileSync(STATION_OUT, JSON.stringify(station));
+
 console.log("[3/4] Uploading segments to R2...");
 uploadSegments(catalog);
+// After the segments, so the player never sees a catalog whose audio isn't there yet
+putObject(STATION_KEY, STATION_OUT, "application/json", STATION_CACHE_CONTROL);
+console.log(`  uploaded ${STATION_KEY} (version ${station.version})`);
 console.log();
 
 console.log("[4/4] Writing catalog + schedule for Worker...");

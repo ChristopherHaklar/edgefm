@@ -7,7 +7,7 @@ import { readFileSync, writeFileSync, existsSync, mkdirSync } from "fs";
 import { spawn } from "child_process";
 import { join } from "path";
 import { fileURLToPath } from "url";
-import { validateWheels, formatWheels, SCHEDULE_DAYS, EPOCH } from "../pipeline/schedule.js";
+import { validateWheels, formatWheels, SCHEDULE_DAYS, EPOCH } from "../public/lib/schedule.js";
 import { listFolders, FOLDER_NAME } from "../pipeline/content.js";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
@@ -19,7 +19,7 @@ const PORT = Number(process.env.PORT ?? 8790);
 // The page builds its preview with the same scheduling code the pipeline uses
 const STATIC = {
   "/": [join(ROOT, "scheduler", "index.html"), "text/html; charset=utf-8"],
-  "/schedule.js": [join(ROOT, "pipeline", "schedule.js"), "text/javascript; charset=utf-8"],
+  "/schedule.js": [join(ROOT, "public", "lib", "schedule.js"), "text/javascript; charset=utf-8"],
 };
 
 // Re-read on every request so a pipeline run is picked up without restarting

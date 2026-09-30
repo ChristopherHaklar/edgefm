@@ -30,42 +30,117 @@
   <audio id="player" controls autoplay></audio>
   <div id="status"></div>
 
-  <script>
+  <script type="module">
+    import { buildSchedule } from "./lib/schedule.js";
+    import { createStation } from "./lib/playlist.js";
+
+    // The R2 bucket's public URL (custom domain): station.json and the audio segments.
+    // The player builds its own playlists from station.json, so web listeners never call the Worker
+    const STATION_URL = "REPLACE_WITH_R2_PUBLIC_URL";
+    // Fallback for browsers that can't run hls.js (older iPhones) or if station.json can't be loaded
     const WORKER_URL = "REPLACE_WITH_WORKER_URL";
+    const REFRESH_MS = 5 * 60 * 1000; // pick up a new publish in open tabs
+
     const audio = document.getElementById("player");
     const nowPlaying = document.getElementById("now-playing");
     const status = document.getElementById("status");
 
-    if (Hls.isSupported()) {
-      const hls = new Hls({ lowLatencyMode: false });
-      hls.loadSource(`${WORKER_URL}/stream.m3u8`);
-      hls.attachMedia(audio);
-      hls.on(Hls.Events.MANIFEST_PARSED, () => {
-        audio.play().catch(() => {});
-        status.textContent = "hls.js";
-      });
-      hls.on(Hls.Events.ERROR, (_, data) => {
-        if (data.fatal) status.textContent = `error: ${data.details}`;
-      });
-    } else if (audio.canPlayType("application/vnd.apple.mpegurl")) {
-      // Native HLS (Safari / iOS)
-      audio.src = `${WORKER_URL}/stream.m3u8`;
-      audio.play().catch(() => {});
-      status.textContent = "native hls";
-    } else {
-      status.textContent = "HLS not supported in this browser";
+    let station = null, version = null, clockOffsetMs = 0, heardSegment = null;
+    const now = () => Date.now() + clockOffsetMs;
+
+    // Builds the same schedule the pipeline and Worker use, from the same code
+    async function loadStation() {
+      const res = await fetch(`${STATION_URL}/station.json`, { cache: "no-cache" });
+      if (!res.ok) throw new Error(`station.json: HTTP ${res.status}`);
+      const data = await res.json();
+      if (data.version === version) return;
+      station = createStation(buildSchedule(data.catalog, data.wheels, { onWarn() {} }), data.catalog);
+      version = data.version;
     }
 
-    async function pollNowPlaying() {
+    // Everyone should hear the same thing, so correct a PC clock that's off using the
+    // web server's clock (same origin, so its Date header is readable). Date only has
+    // whole seconds, so small differences are left alone.
+    async function syncClock() {
       try {
-        const res = await fetch(`${WORKER_URL}/now-playing`);
-        const data = await res.json();
-        nowPlaying.textContent = [data.track, data.artist].filter(Boolean).join(" · ") || "—";
+        const sent = Date.now();
+        const res = await fetch(location.href, { method: "HEAD", cache: "no-store" });
+        const server = Date.parse(res.headers.get("Date"));
+        const offset = server + 500 - (sent + Date.now()) / 2;
+        if (Number.isFinite(offset) && Math.abs(offset) > 2000) clockOffsetMs = offset;
       } catch {}
     }
 
-    pollNowPlaying();
-    setInterval(pollNowPlaying, 10000);
+    // hls.js asks this loader for playlists instead of fetching a URL
+    function stationLoader() {
+      return class extends Hls.DefaultConfig.loader {
+        load(context, config, callbacks) {
+          const text = station.playlist(STATION_URL, now());
+          const t = performance.now();
+          const stats = this.stats ?? {};
+          Object.assign(stats, { aborted: false, loaded: text.length, total: text.length, retry: 0, chunkCount: 0, bwEstimate: 0 });
+          stats.loading = { start: t, first: t, end: t };
+          stats.parsing ??= { start: 0, end: 0 };
+          stats.buffering ??= { start: 0, first: 0, end: 0 };
+          this.stats = stats;
+          this.context = context;
+          // Answer asynchronously, like a real request
+          setTimeout(() => callbacks.onSuccess({ url: context.url, data: text }, stats, context, null), 0);
+        }
+      };
+    }
+
+    function showNowPlaying(data) {
+      nowPlaying.textContent = [data.track, data.artist].filter(Boolean).join(" · ") || "—";
+    }
+
+    function updateNowPlaying() {
+      if (!station) return;
+      // With hls.js, name the segment actually being heard; otherwise go by the clock
+      showNowPlaying(heardSegment != null ? station.nowPlayingAtSegment(heardSegment) : station.nowPlaying(now()));
+    }
+
+    async function pollWorkerNowPlaying() {
+      try { showNowPlaying(await (await fetch(`${WORKER_URL}/now-playing`)).json()); } catch {}
+    }
+
+    function play(src, label, usePlaylistLoader) {
+      if (Hls.isSupported()) {
+        const hls = new Hls({ lowLatencyMode: false, ...(usePlaylistLoader && { pLoader: stationLoader() }) });
+        hls.loadSource(src);
+        hls.attachMedia(audio);
+        hls.on(Hls.Events.MANIFEST_PARSED, () => {
+          audio.play().catch(() => {});
+          status.textContent = label;
+        });
+        // The media sequence number is the segment index since epoch
+        hls.on(Hls.Events.FRAG_CHANGED, (_, { frag }) => { heardSegment = frag.sn; updateNowPlaying(); });
+        hls.on(Hls.Events.ERROR, (_, data) => {
+          if (data.fatal) status.textContent = `error: ${data.details}`;
+        });
+      } else if (audio.canPlayType("application/vnd.apple.mpegurl")) {
+        // Native HLS (Safari / older iOS) fetches playlists itself, so it needs the Worker
+        audio.src = `${WORKER_URL}/stream.m3u8`;
+        audio.play().catch(() => {});
+        status.textContent = "native hls";
+      } else {
+        status.textContent = "HLS not supported in this browser";
+      }
+    }
+
+    try {
+      await Promise.all([loadStation(), syncClock()]);
+      play(`${STATION_URL}/stream.m3u8`, "hls.js · local playlist", true);
+      updateNowPlaying();
+      setInterval(updateNowPlaying, 5000);
+      setInterval(() => loadStation().catch(() => {}), REFRESH_MS);
+    } catch (err) {
+      // No station.json: let the Worker do the work, as before
+      console.warn("Falling back to the Worker:", err);
+      play(`${WORKER_URL}/stream.m3u8`, "hls.js · worker playlist", false);
+      pollWorkerNowPlaying();
+      setInterval(pollWorkerNowPlaying, 10000);
+    }
   </script>
 </body>
 </html>

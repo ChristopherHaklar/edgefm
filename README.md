@@ -5,7 +5,8 @@ An internet radio station that runs entirely on Cloudflare's free tier. Streams 
 ## How it works
 
 - Audio files are stored in Cloudflare R2 as 10-second AAC/MPEG-TS segments
-- A Cloudflare Worker serves a dynamic HLS playlist calculated from the current UTC time
+- The web player builds the live HLS playlist itself from the current UTC time and `station.json` (the wheels and track list, published to R2), so web listeners never call the Worker and stay within the free tier
+- A Cloudflare Worker serves the same playlist at `/stream.m3u8` for external players like VLC, from the same code (`public/lib/playlist.js`)
 - Track order is determined by a clock wheel template + seeded RNG, so the selection is semi-random but reproducible — every listener gets the same stream
 - All heavy lifting (segmenting, scheduling) happens locally before deploy; the Worker is pure math
 
@@ -16,7 +17,8 @@ content/                   # Your audio files: one folder per type, subfolders a
 demo/generate.js           # Generates synthetic demo audio for local testing
 demo/voices.js             # Generates text-to-speech bumpers, DJ breaks, promos and talk
 pipeline/index.js          # Local tool: ffmpeg → R2 → catalog + schedule
-pipeline/schedule.js       # Clock wheel scheduling (shared with the scheduler page)
+public/lib/schedule.js     # Clock wheel scheduling (shared by the pipeline, scheduler and web player)
+public/lib/playlist.js     # Live playlist + now-playing (shared by the Worker and web player)
 pipeline/content.js        # content/ folder conventions
 pipeline/r2.js             # R2 uploads, deletes and the in-bucket manifest
 pipeline/prune.js          # Deletes R2 segments nothing uses any more
@@ -121,10 +123,11 @@ Update `wrangler.toml` with your R2 public URL:
 PUBLIC_URL = "https://audio.example.com" # The bucket's custom domain (or r2.dev URL for testing) from step 1
 ```
 
-The station start time is `EPOCH` in `pipeline/schedule.js` — don't change it once live.
+The station start time is `EPOCH` in `public/lib/schedule.js` — don't change it once live.
 
-Update `public/index.html` — replace `REPLACE_WITH_WORKER_URL` with your Worker URL
-(`https://edgefm.<your-subdomain>.workers.dev`).
+Update `public/index.html`:
+- `REPLACE_WITH_R2_PUBLIC_URL` → the bucket's public URL from step 1 (same as `PUBLIC_URL`). The player loads `station.json` and the audio from there.
+- `REPLACE_WITH_WORKER_URL` → your Worker URL (`https://edgefm.<your-subdomain>.workers.dev`). Only used by browsers that can't run hls.js (older iPhones), or if `station.json` can't be loaded.
 
 ### 3. Add content and deploy
 
@@ -214,7 +217,7 @@ Multiple named wheels with different hour ranges are supported — add entries t
 
 ## Listening
 
-The Cloudflare Pages deployment of `public/index.html` is the primary web player. For external players, point them at your Worker's stream URL directly:
+The Cloudflare Pages deployment of `public/index.html` is the primary web player. It builds its own playlists, so each web listener costs only R2 segment reads, not Worker requests. For external players, point them at your Worker's stream URL directly:
 
 ```
 https://edgefm.<your-subdomain>.workers.dev/stream.m3u8

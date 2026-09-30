@@ -17,6 +17,11 @@ export const MANIFEST_KEY = "edgefm-manifest.json";
 // meaning and the CDN can keep segments forever
 export const SEGMENT_CACHE_CONTROL = "public, max-age=31536000, immutable";
 
+// What the web player loads to build its own playlists (wheels + catalog). It
+// changes on every publish, so edge caches only keep it for a minute
+export const STATION_KEY = "station.json";
+export const STATION_CACHE_CONTROL = "public, max-age=60";
+
 const quote = arg => (/^[\w@%+=:,./-]+$/.test(arg) ? arg : `"${arg.replace(/"/g, '\\"')}"`);
 
 function wrangler(args, { quiet = false } = {}) {
@@ -53,9 +58,13 @@ export function writeManifest(keys) {
   });
 }
 
-export function putSegment(key, file) {
+export function putObject(key, file, contentType, cacheControl) {
   wrangler(["r2", "object", "put", `${R2_BUCKET}/${key}`, `--file=${file}`,
-    "--content-type=video/mp2t", `--cache-control=${SEGMENT_CACHE_CONTROL}`]);
+    `--content-type=${contentType}`, `--cache-control=${cacheControl}`]);
+}
+
+export function putSegment(key, file) {
+  putObject(key, file, "video/mp2t", SEGMENT_CACHE_CONTROL);
 }
 
 export function deleteObject(key) {

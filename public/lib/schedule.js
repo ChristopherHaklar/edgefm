@@ -1,4 +1,4 @@
-// Clock wheel scheduling, shared by the pipeline and the scheduler tool.
+// Clock wheel scheduling, shared by the pipeline, the scheduler tool and the web player.
 
 export const SCHEDULE_DAYS = 30; // pre-compute this many days of schedule (then loop)
 export const EPOCH = new Date("2026-01-01T00:00:00Z"); // station start time — don't change once live
