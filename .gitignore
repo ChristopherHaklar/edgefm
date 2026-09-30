@@ -9,6 +9,7 @@ dist/
 *.flac
 src/catalog.json
 src/schedule.json
+src/station.json
 
 # Terraform
 terraform/.terraform/

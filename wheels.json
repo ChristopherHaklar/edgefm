@@ -1,15 +1,15 @@
 {
   "wheels": {
     "default": [
-      { "type": "music", "tags": ["upbeat"] },
+      { "type": "music" },
       { "type": "bumper" },
-      { "type": "music", "tags": ["chill"] },
+      { "type": "music" },
       { "type": "dj-intro" },
-      { "type": "music", "tags": ["upbeat"] },
+      { "type": "music" },
       { "type": "bumper" },
-      { "type": "music", "tags": ["hype"] },
+      { "type": "music" },
       { "type": "dj-intro" },
-      { "type": "music", "tags": ["chill"] },
+      { "type": "music" },
       { "type": "bumper" }
     ]
   },

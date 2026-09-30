@@ -7,5 +7,6 @@ binding = "AUDIO"
 bucket_name = "edgefm-audio"
 
 [vars]
-EPOCH = "2026-01-01T00:00:00Z"
-PUBLIC_URL = "https://audio.edgefm.workers.dev"
+# Public URL of the edgefm-audio bucket. Use a custom domain in production so segments are
+# CDN-cached; the pub-XXXX.r2.dev URL is rate-limited and only meant for testing.
+PUBLIC_URL = "https://audio.example.com"

@@ -1,0 +1,990 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>EdgeFM Scheduler</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <style>
+    :root {
+      --bg: #f6f6f4; --panel: #ffffff; --line: #e2e1dc; --text: #1c1c1a; --muted: #6d6c66;
+      --accent: #2f6fe4; --accent-text: #ffffff; --soft: #efeee9;
+      --error: #c23b30; --error-bg: #fbeceb; --warn: #9a6a00; --warn-bg: #fdf4de; --now: #fff5c7;
+      --mono: ui-monospace, "Cascadia Code", Consolas, monospace;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root:not([data-theme="light"]) {
+        --bg: #111111; --panel: #1a1a1a; --line: #2e2e2c; --text: #ececea; --muted: #9a9993;
+        --accent: #5b8ff0; --soft: #242422;
+        --error: #f07b70; --error-bg: #3a1d1a; --warn: #e8b64a; --warn-bg: #362a10; --now: #3a3413;
+      }
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.45 system-ui, sans-serif; }
+    button, select, input { font: inherit; color: inherit; }
+    button { cursor: pointer; background: var(--soft); border: 1px solid var(--line); border-radius: 6px; padding: 4px 10px; }
+    button:disabled { opacity: .4; cursor: default; }
+    button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }
+    .muted { color: var(--muted); }
+
+    header { position: sticky; top: 0; z-index: 2; display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 12px 16px;
+             background: var(--panel); border-bottom: 1px solid var(--line); }
+    header h1 { display: flex; align-items: center; gap: 10px; margin: 0; font: 600 16px var(--mono); letter-spacing: .15em; flex: 1; }
+    header h1 img { width: 26px; height: 26px; }
+    header h1 span { color: var(--muted); font-weight: 400; letter-spacing: .05em; }
+    #status { color: var(--muted); font-size: 13px; }
+    #status.dirty { color: var(--warn); }
+    .file-actions { display: flex; gap: 6px; padding-right: 10px; border-right: 1px solid var(--line); }
+    dialog { width: min(760px, calc(100vw - 32px)); max-height: 85vh; padding: 0; border: 1px solid var(--line); border-radius: 10px;
+             background: var(--panel); color: var(--text); }
+    dialog::backdrop { background: rgb(0 0 0 / .55); }
+    .dialog-head { display: flex; align-items: center; gap: 8px; padding: 12px 14px; border-bottom: 1px solid var(--line); }
+    .dialog-head h2 { margin: 0; font: 600 14px var(--mono); }
+    .dialog-head .muted { flex: 1; font-size: 12px; }
+    dialog pre { margin: 0; padding: 14px; overflow: auto; max-height: calc(85vh - 60px); font: 12px/1.5 var(--mono); tab-size: 2; }
+    #toast { margin: 12px 0 0; padding: 8px 12px; border-radius: 6px; white-space: pre-line; }
+    #toast:empty { display: none; }
+    #toast.ok { background: var(--soft); }
+    #toast.bad { background: var(--error-bg); color: var(--error); }
+
+    main { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); gap: 16px; padding: 16px 0; }
+    @media (max-width: 900px) { main { grid-template-columns: minmax(0, 1fr); } }
+    .col { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+    .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px; }
+    .panel-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
+    .panel-head h2 { margin: 0; font-size: 15px; flex: 1; }
+    .hint { margin: 0 0 10px; color: var(--muted); font-size: 13px; }
+
+    .brushes { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+    .brush { display: inline-flex; align-items: center; gap: 6px; }
+    .brush.on { outline: 2px solid var(--text); outline-offset: 1px; }
+    .brush span { color: var(--muted); font-size: 12px; }
+    .dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; flex: none; }
+
+    .hours { display: grid; grid-template-columns: repeat(12, 1fr); gap: 4px; touch-action: none; user-select: none; }
+    @media (max-width: 520px) { .hours { grid-template-columns: repeat(6, 1fr); } }
+    .hour { display: flex; flex-direction: column; align-items: center; padding: 6px 0; border: 0; border-radius: 6px;
+            background: var(--c); color: #fff; min-width: 0; }
+    .hour.missing { background: var(--soft); color: var(--error); outline: 1px dashed var(--error); }
+    .hour b { font: 600 13px var(--mono); }
+    .hour small { font-size: 10px; opacity: .85; white-space: nowrap; }
+
+    code { font-family: var(--mono); font-size: 12px; background: var(--soft); border-radius: 4px; padding: 0 4px; }
+    .content-type { border-top: 1px solid var(--line); padding: 6px 0; }
+    .content-row { display: flex; align-items: center; gap: 8px; min-height: 28px; font-size: 13px; }
+    .content-row .folder { font-family: var(--mono); }
+    .content-row .count { color: var(--muted); font-size: 12px; flex: 1; }
+    .content-row .new { color: var(--warn); font-size: 12px; }
+    .content-row button { padding: 1px 8px; font-size: 12px; }
+    .wheel { border: 1px solid var(--line); border-radius: 8px; padding: 10px; margin-bottom: 10px; }
+    .wheel-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+    .wheel-name { flex: 0 1 180px; min-width: 0; font-weight: 600; background: transparent; border: 1px solid transparent; border-radius: 4px; padding: 2px 6px; }
+    .wheel-name:hover, .wheel-name:focus { border-color: var(--line); background: var(--bg); }
+    .wheel-head .muted { flex: 1; font-size: 12px; }
+    .wheel-body { display: flex; flex-wrap: wrap; gap: 4px 16px; align-items: flex-start; }
+    .wheel-body .slots { flex: 1 1 360px; min-width: 0; }
+    .clock { position: relative; flex: 3 1 300px; max-width: 460px; margin: 0 auto 8px; text-align: center; }
+    .clock svg.zoomed { cursor: grab; }
+    .clock svg.dragging { cursor: grabbing; }
+    .zoom-ctl { display: flex; justify-content: center; align-items: center; gap: 4px; margin-top: 4px; font-size: 12px; }
+    .zoom-ctl button { padding: 0 8px; line-height: 22px; }
+    .zoom-ctl span { min-width: 3.2em; color: var(--muted); font-family: var(--mono); }
+    .clock .hover-info { min-height: 1.45em; color: var(--text); }
+    .clock .hover-info.idle { color: var(--muted); }
+    .clock svg { display: block; width: 100%; height: auto; }
+    .clock path, .clock line { vector-effect: non-scaling-stroke; }
+    .clock path { stroke: var(--panel); stroke-width: 1.5; }
+    .clock path.hl { stroke: var(--text); stroke-width: 2.5; }
+    .clock path.hov { stroke: var(--text); stroke-width: 4; filter: brightness(1.3); }
+    .clock svg.pointing { cursor: pointer; }
+    .clock .n { fill: #fff; font-family: var(--mono); font-weight: 600; font-size: calc(10px / var(--k, 1)); pointer-events: none; }
+    .clock .rl { fill: #fff; font-family: system-ui, sans-serif; font-size: calc(7.5px / var(--k, 1)); pointer-events: none; }
+    .clock .tick { stroke: var(--muted); }
+    .clock .mins { fill: var(--muted); font-family: var(--mono); font-size: calc(9px / var(--k, 1)); }
+    .clock .mid { fill: var(--text); font: 600 12px var(--mono); }
+    .clock .mid-sub { fill: var(--muted); font: 7.5px system-ui, sans-serif; }
+    .slot.flash { animation: flash 1.2s ease-out; }
+    @keyframes flash { from { background: var(--now); } to { background: transparent; } }
+    .clock p { margin: 2px 0 0; font-size: 12px; color: var(--muted); }
+    .legend { display: flex; flex-wrap: wrap; justify-content: center; gap: 2px 10px; font-size: 12px; margin-top: 4px; }
+    .legend span { display: inline-flex; align-items: center; gap: 4px; }
+    .slots { list-style: none; margin: 0 0 8px; padding: 0; counter-reset: slot; }
+    .slot.hl { background: var(--soft); }
+    .slot { display: grid; grid-template-columns: 22px 110px minmax(0, 1fr) auto auto; gap: 8px; align-items: center;
+            padding: 5px 0; border-top: 1px solid var(--line); counter-increment: slot; }
+    .slot::before { content: counter(slot); color: var(--muted); font: 12px var(--mono); text-align: right; }
+    .slot select { background: var(--bg); border: 1px solid var(--line); border-radius: 4px; padding: 2px 4px; min-width: 0; }
+    .tags { display: flex; flex-wrap: wrap; gap: 4px; }
+    .pick { max-width: 100%; background: var(--bg); border: 1px solid var(--line); border-radius: 4px; padding: 2px 4px; font-size: 12px; }
+    .pick.fixed { border-color: var(--accent); }
+    .tag { font-size: 12px; padding: 1px 8px; border-radius: 999px; background: transparent; color: var(--muted); }
+    .tag.on { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }
+    .pool { font-size: 12px; color: var(--muted); white-space: nowrap; }
+    .pool.empty { color: var(--error); }
+    .moves { display: flex; gap: 2px; }
+    button.icon { padding: 2px 7px; background: transparent; border-color: transparent; }
+    button.icon:hover:not(:disabled) { background: var(--soft); border-color: var(--line); }
+    @media (max-width: 520px) {
+      .slot { grid-template-columns: 22px minmax(0, 1fr) auto; }
+      .tags { grid-column: 2 / -1; }
+      .pool { grid-column: 2; }
+    }
+
+    .day-nav { display: flex; align-items: center; gap: 6px; }
+    .day-nav span { min-width: 12em; text-align: center; font-size: 13px; }
+    .issues { list-style: none; margin: 0 0 10px; padding: 0; }
+    .issues li { padding: 6px 10px; border-radius: 6px; margin-bottom: 4px; font-size: 13px; }
+    .issues .error { background: var(--error-bg); color: var(--error); }
+    .issues .warning { background: var(--warn-bg); color: var(--warn); }
+    .timeline { position: relative; max-height: 70vh; overflow-y: auto; border-top: 1px solid var(--line); }
+    .hour-head { position: sticky; top: 0; display: flex; align-items: center; gap: 8px; padding: 6px 4px;
+                 background: var(--panel); border-bottom: 1px solid var(--line); font-size: 13px; }
+    .hour-head b { font-family: var(--mono); }
+    .row { display: grid; grid-template-columns: 70px minmax(0, 1fr) auto 44px; gap: 10px; padding: 3px 4px; font-size: 13px; }
+    .row.now { background: var(--now); border-radius: 4px; }
+    .onair { display: none; font-size: 11px; font-weight: 600; color: var(--warn); margin-right: 6px; }
+    .row.now .onair { display: inline; }
+    .row time, .row .dur { font-family: var(--mono); color: var(--muted); }
+    .row .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .badge { font-size: 11px; color: var(--muted); border: 1px solid var(--line); border-radius: 999px; padding: 0 6px; }
+    .plays { display: grid; grid-template-columns: minmax(0, 1fr) 2fr 44px; gap: 4px 10px; align-items: center; font-size: 13px; }
+    .plays .bar { height: 8px; border-radius: 4px; background: var(--accent); min-width: 2px; }
+    .plays .n { font-family: var(--mono); text-align: right; color: var(--muted); }
+    .plays .never { color: var(--error); }
+  </style>
+</head>
+<body>
+  <header>
+    <h1><img src="/favicon.svg" alt="">EDGE FM <span>scheduler</span></h1>
+    <span id="status"></span>
+    <div class="file-actions">
+      <button id="view-file">View file</button>
+      <button id="download">Download</button>
+      <button id="import">Import</button>
+      <input type="file" id="import-file" accept=".json,application/json" hidden>
+    </div>
+    <button id="revert">Revert</button>
+    <button id="save" class="primary">Save</button>
+  </header>
+  <div id="toast"></div>
+
+  <dialog id="file-dialog" aria-labelledby="file-title">
+    <div class="dialog-head">
+      <h2 id="file-title">wheels.json</h2>
+      <span class="muted" id="file-note"></span>
+      <button id="copy-file">Copy</button>
+      <button id="close-file">Close</button>
+    </div>
+    <pre id="file-view"></pre>
+  </dialog>
+
+  <main>
+    <section class="col">
+      <div class="panel">
+        <div class="panel-head"><h2>Hours</h2></div>
+        <p class="hint">Pick a wheel, then click or drag across the hours it should play. Hours are UTC, with your local time underneath.</p>
+        <div id="brushes" class="brushes"></div>
+        <div id="hours" class="hours"></div>
+      </div>
+      <div class="panel">
+        <div class="panel-head">
+          <h2>Content</h2>
+          <button data-action="refresh-content">Refresh</button>
+          <button data-action="open-folder" data-path="">Open content folder</button>
+          <button data-action="new-type">+ New type</button>
+        </div>
+        <p class="hint">Each folder in <code>content/</code> is a type, and its subfolders are tags a slot can pick. Tracks in a <code>rare</code> folder are picked much less often. Add audio files, then run <code>npm run pipeline</code> so they can be scheduled.</p>
+        <div id="content"></div>
+      </div>
+      <div class="panel">
+        <div class="panel-head"><h2>Wheels</h2><button data-action="add-wheel">+ New wheel</button></div>
+        <p class="hint">Each wheel plays its slots in order, then repeats. A slot picks a random track of its type. Highlighted tags narrow the pick to tracks with all of those tags.</p>
+        <p class="hint">Each clock is an estimate of one hour: every slot gets the average length of its tracks, and the wheel repeats (lighter slices) until the hour is full. On air, a wheel carries on from where it left off rather than restarting on the hour.</p>
+        <div id="wheels"></div>
+      </div>
+    </section>
+
+    <section class="col">
+      <div class="panel">
+        <div class="panel-head">
+          <h2>Preview</h2>
+          <div class="day-nav">
+            <button class="icon" data-action="prev-day" aria-label="Previous day">‹</button>
+            <span id="day-label"></span>
+            <button class="icon" data-action="next-day" aria-label="Next day">›</button>
+            <button data-action="today">Today</button>
+          </div>
+        </div>
+        <p class="hint">The highlighted row is what's on air right now (if this schedule were live). It follows the clock while the page is open.</p>
+        <ul id="issues" class="issues"></ul>
+        <div id="timeline" class="timeline"></div>
+      </div>
+      <div class="panel">
+        <div class="panel-head"><h2>Plays per loop</h2><span class="muted" id="loop-note"></span></div>
+        <div id="plays" class="plays"></div>
+      </div>
+    </section>
+  </main>
+
+  <script type="module">
+    import { buildSchedule, formatWheels, getPool, validateWheels, wheelForHour } from "/schedule.js";
+
+    const DAY = 24 * 60 * 60;
+    const COLORS = ["#2f6fe4", "#d98a1c", "#2c9c72", "#a64fc2", "#d4493f", "#1f95ad", "#7d7428", "#c4507f"];
+    const TYPE_COLORS = { "music": "#4a78d8", "bumper": "#3aa981", "dj-intro": "#e09a3a", "promo": "#d05c5c", "talk": "#9b6fd0" };
+    const EXTRA_TYPE_COLORS = ["#3b9fb8", "#a0892c", "#c4507f", "#6b8e3a"];
+    const NEW_TYPE = "__new__";
+
+    const state = {
+      wheels: {},        // name → slots, edited in place
+      hourMap: [],       // UTC hour → wheel name
+      tracks: [], days: 30, epochMs: 0, catalogMissing: false,
+      brush: null, day: 0, saved: "",
+      zoom: {},          // wheel name → { k, x, y } clock zoom
+      folders: [],       // content/ folders on disk: [{ path, audio }]
+    };
+
+    const $ = id => document.getElementById(id);
+    const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+    const catalog = () => ({ tracks: state.tracks });
+    const colorOf = name => COLORS[Object.keys(state.wheels).indexOf(name) % COLORS.length];
+    const hoursFor = name => state.hourMap.filter(w => w === name).length;
+    const pad = n => String(n).padStart(2, "0");
+    const clock = s => `${pad(Math.floor(s / 3600) % 24)}:${pad(Math.floor(s / 60) % 60)}:${pad(Math.floor(s) % 60)}`;
+    const mmss = s => `${Math.floor(s / 60)}:${pad(Math.round(s % 60))}`;
+    const localHour = h => new Date(Date.UTC(2026, 0, 1, h)).toLocaleTimeString([], { hour: "numeric" });
+    const loopSecondsNow = () => (((Date.now() - state.epochMs) / 1000) % (state.days * DAY) + state.days * DAY) % (state.days * DAY);
+    const todayIndex = () => Math.floor(loopSecondsNow() / DAY);
+
+    // Hour map → compact ranges, e.g. [{hours: "22-5", wheel: "night"}, {hours: "6-21", wheel: "day"}]
+    function scheduleFromHours(map) {
+      const runs = [];
+      map.forEach((wheel, h) => {
+        const last = runs.at(-1);
+        if (last?.wheel === wheel) last.to = h;
+        else runs.push({ wheel, from: h, to: h });
+      });
+      if (runs.length > 1 && runs[0].wheel === runs.at(-1).wheel) runs[0].from = runs.pop().from; // wrap past midnight
+      return runs.map(r => ({ hours: r.from === r.to ? String(r.from) : `${r.from}-${r.to}`, wheel: r.wheel }));
+    }
+
+    const currentJson = () => ({ wheels: state.wheels, schedule: scheduleFromHours(state.hourMap) });
+    const isDirty = () => JSON.stringify(currentJson()) !== state.saved;
+
+    function applyWheels(json) {
+      state.wheels = json.wheels ?? {};
+      state.hourMap = Array.from({ length: 24 }, (_, h) => wheelForHour(json, h));
+      if (!(state.brush in state.wheels)) state.brush = Object.keys(state.wheels)[0];
+    }
+
+    async function load() {
+      const res = await fetch("/api/state");
+      const s = await res.json();
+      applyWheels(s.wheels);
+      setContent(s);
+      state.days = s.days;
+      state.epochMs = Date.parse(s.epoch);
+      state.saved = JSON.stringify(currentJson());
+      state.day = todayIndex();
+      render();
+    }
+
+    function toast(message, bad = false) {
+      $("toast").textContent = message;
+      $("toast").className = bad ? "bad" : "ok";
+      clearTimeout(toast.timer);
+      if (!bad) toast.timer = setTimeout(() => $("toast").textContent = "", 5000);
+    }
+
+    // --- Rendering ---
+    function render() {
+      renderHeader();
+      renderHours();
+      renderContent();
+      renderWheels();
+      wireClocks();
+      schedulePreview();
+    }
+
+    function renderHeader() {
+      const dirty = isDirty();
+      $("status").textContent = dirty ? "Unsaved changes" : "Saved";
+      $("status").className = dirty ? "dirty" : "";
+      $("save").disabled = !dirty;
+      $("revert").disabled = !dirty;
+    }
+
+    function renderHours() {
+      $("brushes").innerHTML = Object.keys(state.wheels).map(name => `
+        <button class="brush ${name === state.brush ? "on" : ""}" data-action="brush" data-wheel="${esc(name)}">
+          <i class="dot" style="background:${colorOf(name)}"></i>${esc(name)} <span>${hoursFor(name)}h</span>
+        </button>`).join("");
+
+      $("hours").innerHTML = state.hourMap.map((wheel, h) => {
+        const known = wheel in state.wheels;
+        return `<button class="hour ${known ? "" : "missing"}" data-hour="${h}" style="--c:${known ? colorOf(wheel) : "transparent"}"
+                  title="${pad(h)}:00 UTC — ${known ? esc(wheel) : "no wheel"}"><b>${pad(h)}</b><small>${localHour(h)}</small></button>`;
+      }).join("");
+    }
+
+    function setContent({ folders, tracks, catalogMissing }) {
+      state.folders = folders;
+      state.tracks = tracks;
+      state.catalogMissing = catalogMissing;
+    }
+
+    // Types are top-level folders, plus any processed or in-use type whose folder has gone
+    function allTypes(...extra) {
+      const fromFolders = state.folders.filter(f => !f.path.includes("/")).map(f => f.path);
+      return [...new Set([...fromFolders, ...state.tracks.map(t => t.category), ...extra])].filter(Boolean).sort();
+    }
+
+    // Tags are subfolder names under the type, including empty ones not processed yet
+    function tagsFor(type) {
+      const fromFolders = state.folders.filter(f => f.path.startsWith(type + "/")).flatMap(f => f.path.split("/").slice(1));
+      const fromTracks = state.tracks.filter(t => t.category === type).flatMap(t => t.tags);
+      return [...new Set([...fromFolders, ...fromTracks])].sort();
+    }
+
+    function renderContent() {
+      const processed = new Set(state.tracks.map(t => t.file));
+      const row = (folder, depth) => {
+        const name = folder.path.split("/").pop();
+        const unprocessed = folder.audio.filter(f => !processed.has(f)).length;
+        const isType = depth === 0;
+        const total = isType ? state.tracks.filter(t => t.category === folder.path).length : 0;
+        const count = isType
+          ? `${total} track${total === 1 ? "" : "s"} ready`
+          : `${folder.audio.length} file${folder.audio.length === 1 ? "" : "s"}${name === "rare" ? " · rarely picked" : ""}`;
+        return `
+          <div class="content-row" style="padding-left:${depth * 22}px">
+            ${isType ? `<i class="dot" style="background:${typeColor(folder.path)}"></i>` : `<span class="muted">└</span>`}
+            <span class="folder">${esc(name)}</span>
+            <span class="count">${count}</span>
+            ${unprocessed ? `<span class="new" title="Run npm run pipeline to process them">${unprocessed} new, not processed yet</span>` : ""}
+            <button data-action="new-subfolder" data-path="${esc(folder.path)}">+ Subfolder</button>
+            <button data-action="open-folder" data-path="${esc(folder.path)}">Open</button>
+          </div>`;
+      };
+      const types = state.folders.filter(f => !f.path.includes("/"));
+      $("content").innerHTML = types.length ? types.map(type => `
+        <div class="content-type">
+          ${row(type, 0)}
+          ${state.folders.filter(f => f.path.startsWith(type.path + "/")).map(f => row(f, f.path.split("/").length - 1)).join("")}
+        </div>`).join("") : `<p class="muted">No folders in content/ yet.</p>`;
+    }
+
+    async function postJson(url, body) {
+      const res = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+      const out = await res.json();
+      if (!res.ok) throw new Error(out.errors?.join("\n") ?? res.statusText);
+      return out;
+    }
+
+    // Folder names are type and tag names, so nudge input into the allowed form
+    const toFolderName = input => input.trim().toLowerCase().replace(/[\s_]+/g, "-");
+
+    async function createFolder(path) {
+      try {
+        setContent(await postJson("/api/folders", { path }));
+        toast(`Created content/${path}. Add audio files to it, then run npm run pipeline.`);
+        return true;
+      } catch (err) {
+        toast(`Couldn't create content/${path}:\n${err.message}`, true);
+        return false;
+      }
+    }
+
+    async function promptNewType() {
+      const input = prompt("Name for the new type of content (becomes a folder in content/), e.g. \"jingle\" or \"late-night\":");
+      if (!input) return null;
+      const name = toFolderName(input);
+      return (await createFolder(name)) ? name : null;
+    }
+
+    function typeColor(type) {
+      if (TYPE_COLORS[type]) return TYPE_COLORS[type];
+      const extra = allTypes().filter(t => !TYPE_COLORS[t]);
+      return EXTRA_TYPE_COLORS[Math.max(0, extra.indexOf(type)) % EXTRA_TYPE_COLORS.length];
+    }
+
+    // Weighted average track length, matching how often each track gets picked
+    function expectedSeconds(pool) {
+      const total = pool.reduce((s, t) => s + (t.weight ?? 1), 0);
+      return pool.reduce((s, t) => s + (t.weight ?? 1) * t.duration, 0) / total;
+    }
+
+    const CLOCK = { HOUR: 3600, C: 100, R: 72, R0: 32 };
+    const MIN_TARGET = 90; // seconds: short slices (bumpers, IDs) are hit-tested as at least this wide
+
+    // Which slice is under the pointer? Short slices get a wider target and win over
+    // their neighbours inside it, so a 10s bumper is as easy to hit as a 90s track.
+    function sliceAt(svg, e) {
+      const pt = toSvg(svg, e), k = parseFloat(svg.style.getPropertyValue("--k")) || 1;
+      const dx = pt.x - CLOCK.C, dy = pt.y - CLOCK.C;
+      const dist = Math.hypot(dx, dy);
+      if (dist < CLOCK.R0 || dist > CLOCK.R + 12) return null;
+      const sec = ((Math.atan2(dx, -dy) / (2 * Math.PI) + 1) % 1) * CLOCK.HOUR;
+      let best = null;
+      for (const path of svg.querySelectorAll("path[data-slot]")) {
+        // Zoomed in, slices are bigger on screen, so they need less help
+        const t = +path.dataset.t, end = +path.dataset.end, grow = Math.max(0, (MIN_TARGET / k - (end - t)) / 2);
+        // Check either side of :00 too, so targets near the top wrap round
+        const hit = [sec, sec - CLOCK.HOUR, sec + CLOCK.HOUR].some(x => x >= t - grow && x < end + grow);
+        if (hit && (!best || end - t < best.end - best.t)) best = { path, t, end };
+      }
+      return best?.path ?? null;
+    }
+
+    function setReadout(svg, lines) {
+      svg.querySelectorAll(".readout text").forEach((el, i) => (el.textContent = lines[i] ?? ""));
+    }
+
+    function highlightSlot(wheel, index) {
+      document.querySelectorAll(".hl, .hov").forEach(el => el.classList.remove("hl", "hov"));
+      if (!wheel || index == null) return;
+      wheel.querySelectorAll(`[data-slot="${index}"], .slot[data-index="${index}"]`).forEach(el => el.classList.add("hl"));
+    }
+
+    const ZOOM_HINT = "Scroll or double-click to zoom · drag to pan";
+    const MAX_ZOOM = 12;
+    const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+    const toSvg = (svg, e) => new DOMPoint(e.clientX, e.clientY).matrixTransform(svg.getScreenCTM().inverse());
+
+    // Zoom is kept per wheel so it survives re-renders while editing
+    function applyZoom(svg, z) {
+      const w = 200 / z.k;
+      svg.setAttribute("viewBox", `${z.x} ${z.y} ${w} ${w}`);
+      svg.style.setProperty("--k", z.k);
+      svg.classList.toggle("zoomed", z.k > 1);
+      for (const g of svg.querySelectorAll("g.lbl")) {
+        const deg = +g.dataset.deg;
+        // Full label once the slice is wide enough on screen for a line of text, else just the number
+        const long = z.k >= 2 && deg * z.k * z.k >= 11;
+        g.children[0].style.display = !long && deg * z.k >= 7 ? "" : "none";
+        g.children[1].style.display = long ? "" : "none";
+      }
+      svg.querySelectorAll(".mins.minor").forEach(el => (el.style.display = z.k >= 2.5 ? "" : "none"));
+      svg.querySelector(".readout").style.display = z.k >= 2 ? "none" : ""; // the line under the clock takes over
+      const fig = svg.closest(".clock");
+      fig.querySelector(".zoom-level").textContent = `${z.k < 10 ? z.k.toFixed(1) : Math.round(z.k)}×`;
+      fig.querySelector('[data-zoom="in"]').disabled = z.k >= MAX_ZOOM;
+      fig.querySelector('[data-zoom="out"]').disabled = fig.querySelector('[data-zoom="reset"]').disabled = z.k <= 1;
+    }
+
+    function wireClocks() {
+      for (const svg of document.querySelectorAll(".clock svg")) {
+        const wheel = svg.closest(".wheel");
+        const fig = svg.closest(".clock");
+        const info = fig.querySelector(".hover-info");
+        const z = (state.zoom[wheel.dataset.wheel] ??= { k: 1, x: 0, y: 0 });
+        applyZoom(svg, z);
+
+        const zoomAt = (pt, k) => {
+          k = clamp(k, 1, MAX_ZOOM);
+          const ratio = (200 / k) / (200 / z.k);
+          z.x = clamp(pt.x - (pt.x - z.x) * ratio, 0, 200 - 200 / k);
+          z.y = clamp(pt.y - (pt.y - z.y) * ratio, 0, 200 - 200 / k);
+          z.k = k;
+          applyZoom(svg, z);
+        };
+        // Buttons zoom on the middle of the view, but never into the empty hub:
+        // from there, aim at the ring in the same direction (or :00 from dead centre)
+        const viewCentre = () => {
+          const x = z.x + 100 / z.k, y = z.y + 100 / z.k, ring = (CLOCK.R + CLOCK.R0) / 2;
+          const dx = x - CLOCK.C, dy = y - CLOCK.C, dist = Math.hypot(dx, dy);
+          if (dist >= ring) return { x, y };
+          const a = dist < 1 ? 0 : Math.atan2(dx, -dy);
+          return { x: CLOCK.C + ring * Math.sin(a), y: CLOCK.C - ring * Math.cos(a) };
+        };
+
+        svg.addEventListener("wheel", e => {
+          e.preventDefault();
+          zoomAt(toSvg(svg, e), z.k * Math.exp(-e.deltaY * 0.002));
+        }, { passive: false });
+        svg.addEventListener("dblclick", e => { e.preventDefault(); zoomAt(toSvg(svg, e), z.k * 2); });
+        fig.querySelector('[data-zoom="in"]').addEventListener("click", () => zoomAt(viewCentre(), z.k * 1.6));
+        fig.querySelector('[data-zoom="out"]').addEventListener("click", () => zoomAt(viewCentre(), z.k / 1.6));
+        fig.querySelector('[data-zoom="reset"]').addEventListener("click", () => zoomAt(viewCentre(), 1));
+
+        // Drag to pan while zoomed; a drag shouldn't also count as a click on a slice
+        let drag = null, dragged = false;
+        svg.addEventListener("pointerdown", e => {
+          if (z.k <= 1 || e.button !== 0) return;
+          drag = { cx: e.clientX, cy: e.clientY, x: z.x, y: z.y };
+          dragged = false;
+          svg.setPointerCapture(e.pointerId);
+        });
+        svg.addEventListener("pointermove", e => {
+          if (!drag) return;
+          const dx = e.clientX - drag.cx, dy = e.clientY - drag.cy;
+          if (!dragged && Math.hypot(dx, dy) < 4) return;
+          dragged = true;
+          svg.classList.add("dragging");
+          const unitsPerPx = (200 / z.k) / svg.getBoundingClientRect().width;
+          z.x = clamp(drag.x - dx * unitsPerPx, 0, 200 - 200 / z.k);
+          z.y = clamp(drag.y - dy * unitsPerPx, 0, 200 - 200 / z.k);
+          applyZoom(svg, z);
+        });
+        const endDrag = () => { drag = null; svg.classList.remove("dragging"); };
+        svg.addEventListener("pointerup", endDrag);
+        svg.addEventListener("pointercancel", endDrag);
+
+        const reset = () => {
+          highlightSlot(null);
+          svg.classList.remove("pointing");
+          setReadout(svg, JSON.parse(svg.querySelector(".readout").dataset.default));
+          info.textContent = ZOOM_HINT;
+          info.classList.add("idle");
+        };
+        svg.addEventListener("mousemove", e => {
+          const path = sliceAt(svg, e);
+          if (!path) return reset();
+          const d = path.dataset;
+          highlightSlot(wheel, d.slot);
+          path.classList.add("hov");
+          svg.classList.add("pointing");
+          setReadout(svg, [`Slot ${+d.slot + 1}`, d.type, `~${mmss(+d.len)} · at :${pad(Math.floor(+d.t / 60))}`]);
+          // The hub can be off-screen when zoomed, so repeat the details under the clock
+          info.textContent = `Slot ${+d.slot + 1} · ${d.type} · ~${mmss(+d.len)} · at :${pad(Math.floor(+d.t / 60))}:${pad(Math.floor(+d.t % 60))}`;
+          info.classList.remove("idle");
+        });
+        svg.addEventListener("mouseleave", reset);
+        svg.addEventListener("click", e => {
+          if (dragged) { dragged = false; return; }
+          const path = sliceAt(svg, e);
+          const row = path && wheel.querySelector(`.slot[data-index="${path.dataset.slot}"]`);
+          if (!row) return;
+          row.scrollIntoView({ block: "nearest", behavior: "smooth" });
+          row.querySelector("select").focus({ preventScroll: true });
+          row.classList.remove("flash");
+          void row.offsetWidth; // restart the animation
+          row.classList.add("flash");
+        });
+      }
+    }
+
+    // Radio-style clock: the wheel's slots laid round one hour, repeating until it's full
+    function clockSvg(slots) {
+      const playable = slots
+        .map((slot, i) => ({ slot, i, pool: getPool(catalog(), slot) }))
+        .filter(p => p.pool.length)
+        .map(p => ({ ...p, seconds: expectedSeconds(p.pool) }));
+      if (!playable.length) return "";
+
+      const { HOUR, C, R, R0 } = CLOCK;
+      const xy = (r, sec) => {
+        const a = (sec / HOUR) * 2 * Math.PI;
+        return [C + r * Math.sin(a), C - r * Math.cos(a)].map(v => v.toFixed(2));
+      };
+      const at = (r, sec) => xy(r, sec).join(" ");
+
+      let slices = "", t = 0, n = 0;
+      while (t < HOUR) {
+        const p = playable[n % playable.length];
+        const end = Math.min(HOUR - 0.01, t + p.seconds); // a full 360° arc would collapse to a point
+        const large = end - t > HOUR / 2 ? 1 : 0;
+        slices += `<path data-slot="${p.i}" data-t="${t.toFixed(2)}" data-end="${end.toFixed(2)}" data-len="${p.seconds.toFixed(1)}"
+          data-type="${esc(p.slot.file ? p.pool[0].name : p.slot.type)}" fill="${typeColor(p.slot.type)}" opacity="${n < playable.length ? 1 : 0.55}"
+          d="M${at(R, t)} A${R} ${R} 0 ${large} 1 ${at(R, end)} L${at(R0, end)} A${R0} ${R0} 0 ${large} 0 ${at(R0, t)}Z"/>`;
+        const mid = (t + end) / 2, angle = (mid / HOUR) * 360, flip = angle > 180;
+        const [nx, ny] = xy((R + R0) / 2 + 6, mid), [lx, ly] = xy((R + R0) / 2, mid);
+        const what = p.slot.file ? p.pool[0].name : p.slot.type + (p.slot.tags?.length ? ` [${p.slot.tags.join(", ")}]` : "");
+        // Radial label centred in the slice, reading outward (flipped on the left so it's never upside down)
+        slices += `<g class="lbl" data-deg="${((end - t) / HOUR * 360).toFixed(3)}">
+          <text class="n" x="${nx}" y="${ny}" text-anchor="middle" dominant-baseline="central">${p.i + 1}</text>
+          <text class="rl" x="${lx}" y="${ly}" transform="rotate(${(flip ? angle + 90 : angle - 90).toFixed(2)} ${lx} ${ly})"
+            text-anchor="middle" dominant-baseline="central">${p.i + 1} · ${esc(what)} · ${mmss(p.seconds)}</text>
+        </g>`;
+        t = end + 0.01;
+        n++;
+      }
+
+      let ticks = "";
+      for (let m = 0; m < 60; m++) {
+        const [x1, y1] = xy(R + 3, m * 60), [x2, y2] = xy(R + (m % 5 ? 6 : 10), m * 60);
+        ticks += `<line class="tick" x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke-width="${m % 15 ? 1 : 2.5}"/>`;
+      }
+      for (let m = 0; m < 60; m += 5) {
+        const [x, y] = xy(R + 18, m * 60);
+        ticks += `<text class="mins ${m % 15 ? "minor" : ""}" x="${x}" y="${y}" text-anchor="middle" dominant-baseline="central">:${pad(m)}</text>`;
+      }
+
+      const pass = playable.reduce((s, p) => s + p.seconds, 0);
+      const skipped = slots.length - playable.length;
+      const types = [...new Set(playable.map(p => p.slot.type))];
+      return `
+        <figure class="clock">
+          <svg viewBox="0 0 200 200" role="img" aria-label="Estimated hour for this wheel">
+            ${ticks}${slices}
+            <g class="readout" data-default="${esc(JSON.stringify([`${(HOUR / pass).toFixed(1)}×`, "per hour", ""]))}">
+              <text class="mid" x="${C}" y="${C - 4}" text-anchor="middle">${(HOUR / pass).toFixed(1)}×</text>
+              <text class="mid-sub" x="${C}" y="${C + 7}" text-anchor="middle">per hour</text>
+              <text class="mid-sub" x="${C}" y="${C + 16}" text-anchor="middle"></text>
+            </g>
+          </svg>
+          <div class="zoom-ctl">
+            <button data-zoom="in" aria-label="Zoom in">+</button>
+            <button data-zoom="out" aria-label="Zoom out">−</button>
+            <button data-zoom="reset">Reset</button>
+            <span class="zoom-level">1×</span>
+          </div>
+          <p class="hover-info idle">${ZOOM_HINT}</p>
+          <div class="legend">${types.map(t => `<span><i class="dot" style="background:${typeColor(t)}"></i>${esc(t)}</span>`).join("")}</div>
+          <p>One pass ≈ ${mmss(pass)}${skipped ? ` · ${skipped} empty slot${skipped > 1 ? "s" : ""} skipped` : ""}</p>
+        </figure>`;
+    }
+
+    function slotRow(slot, i, count) {
+      const pool = getPool(catalog(), slot);
+      const types = allTypes(slot.type);
+      const tags = [...new Set([...tagsFor(slot.type), ...(slot.tags ?? [])])]; // keep unknown tags removable
+      const choices = state.tracks.filter(t => t.category === slot.type).sort((a, b) => a.name.localeCompare(b.name));
+      // Several clips can share a name (e.g. "Station ID"), so add the file name to tell them apart
+      const label = t => choices.filter(c => c.name === t.name).length > 1 ? `${t.name} (${t.file.split("/").pop()})` : t.name;
+      const missing = slot.file && !choices.some(t => t.file === slot.file);
+      const pick = `
+        <select class="pick ${slot.file ? "fixed" : ""}" data-action="pick" aria-label="Which track plays">
+          <option value="">Random ${esc(slot.type)}</option>
+          ${missing ? `<option value="${esc(slot.file)}" selected>Missing: ${esc(slot.file)}</option>` : ""}
+          ${choices.map(t => `<option value="${esc(t.file)}" ${t.file === slot.file ? "selected" : ""}>${esc(label(t))}</option>`).join("")}
+        </select>`;
+      const tagChips = tags.length
+        ? tags.map(t => `<button class="tag ${slot.tags?.includes(t) ? "on" : ""}" data-action="tag" data-tag="${esc(t)}">${esc(t)}</button>`).join("")
+        : `<span class="muted">no tags</span>`;
+      return `
+        <li class="slot" data-index="${i}">
+          <select data-action="type" aria-label="Slot type">
+            ${types.map(t => `<option ${t === slot.type ? "selected" : ""}>${esc(t)}</option>`).join("")}
+            <option value="${NEW_TYPE}">+ New type…</option>
+          </select>
+          <div class="tags">${pick}${slot.file ? "" : tagChips}</div>
+          <span class="pool ${pool.length ? "" : "empty"}" title="${esc(pool.map(t => t.name).join("\n"))}">
+            ${slot.file ? (pool.length ? "always this" : "not found") : pool.length ? `${pool.length} track${pool.length > 1 ? "s" : ""}` : "no tracks"}
+          </span>
+          <span class="moves">
+            <button class="icon" data-action="up" ${i === 0 ? "disabled" : ""} aria-label="Move up">↑</button>
+            <button class="icon" data-action="down" ${i === count - 1 ? "disabled" : ""} aria-label="Move down">↓</button>
+            <button class="icon" data-action="remove-slot" ${count === 1 ? "disabled" : ""} aria-label="Remove slot">✕</button>
+          </span>
+        </li>`;
+    }
+
+    function renderWheels() {
+      const names = Object.keys(state.wheels);
+      $("wheels").innerHTML = names.map(name => {
+        const slots = state.wheels[name];
+        return `
+          <article class="wheel" data-wheel="${esc(name)}">
+            <div class="wheel-head">
+              <i class="dot" style="background:${colorOf(name)}"></i>
+              <input class="wheel-name" value="${esc(name)}" data-action="rename" aria-label="Wheel name">
+              <span class="muted">${slots.length} slot${slots.length === 1 ? "" : "s"} · ${hoursFor(name)}h a day</span>
+              <button class="icon" data-action="delete-wheel" ${names.length === 1 ? "disabled" : ""} aria-label="Delete wheel">✕</button>
+            </div>
+            <div class="wheel-body">
+              ${clockSvg(slots)}
+              <ol class="slots">${slots.map((slot, i) => slotRow(slot, i, slots.length)).join("")}</ol>
+            </div>
+            <button data-action="add-slot">+ Add slot</button>
+          </article>`;
+      }).join("");
+    }
+
+    // --- Preview (same scheduling code the pipeline runs) ---
+    let previewTimer, scrolledToNow = false;
+
+    // Move the on-air highlight along while the page is open
+    setInterval(() => {
+      if (state.day !== todayIndex()) return;
+      const now = loopSecondsNow();
+      for (const row of $("timeline").querySelectorAll(".row")) {
+        row.classList.toggle("now", now >= +row.dataset.t && now < +row.dataset.end);
+      }
+    }, 5000);
+    function schedulePreview() {
+      clearTimeout(previewTimer);
+      previewTimer = setTimeout(renderPreview, 120);
+    }
+
+    function renderPreview() {
+      const wheels = currentJson();
+      const { errors, warnings } = validateWheels(wheels, catalog());
+      if (state.catalogMissing) errors.unshift("No track list yet — run `npm run pipeline` once so the scheduler knows your tracks.");
+      $("issues").innerHTML = [
+        ...errors.map(m => `<li class="error">${esc(m)}</li>`),
+        ...warnings.map(m => `<li class="warning">${esc(m)}</li>`),
+      ].join("");
+
+      const today = todayIndex();
+      const loopStart = state.epochMs + Math.floor((Date.now() - state.epochMs) / 1000 / (state.days * DAY)) * state.days * DAY * 1000;
+      let date = new Date(loopStart + state.day * DAY * 1000);
+      if (state.day < today) date = new Date(date.getTime() + state.days * DAY * 1000); // next time this day comes round
+      const dateText = date.toLocaleDateString([], { weekday: "short", month: "short", day: "numeric", timeZone: "UTC" });
+      $("day-label").textContent = `Day ${state.day + 1} of ${state.days} · ${state.day === today ? "today" : dateText}`;
+      $("loop-note").textContent = `the schedule repeats every ${state.days} days`;
+
+      if (errors.length) {
+        $("timeline").innerHTML = "";
+        $("plays").innerHTML = "";
+        return;
+      }
+
+      const { entries } = buildSchedule(catalog(), wheels, { onWarn() {} });
+      const tracks = new Map(state.tracks.map(t => [t.id, t]));
+      const start = state.day * DAY, end = start + DAY;
+      const now = state.day === today ? loopSecondsNow() : -1;
+
+      let html = "", lastHour = -1;
+      for (const e of entries) {
+        const track = tracks.get(e.id);
+        if (e.t >= end || e.t + track.duration <= start) continue;
+        const hour = Math.floor(Math.max(e.t, start) / 3600) % 24;
+        if (hour !== lastHour) {
+          const wheel = state.hourMap[hour];
+          html += `<div class="hour-head"><b>${pad(hour)}:00</b><span class="muted">${localHour(hour)} local</span>
+                   <i class="dot" style="background:${colorOf(wheel)}"></i>${esc(wheel)}</div>`;
+          lastHour = hour;
+        }
+        const playing = now >= e.t && now < e.t + track.duration;
+        html += `<div class="row ${playing ? "now" : ""}" data-t="${e.t}" data-end="${e.t + track.duration}">
+                   <time>${clock(e.t)}</time>
+                   <span class="name">${esc(track.name)}${track.artist ? ` <span class="muted">· ${esc(track.artist)}</span>` : ""}</span>
+                   <span><span class="onair">● ON AIR</span>${track.category === "music" ? "" : `<span class="badge">${esc(track.category)}</span>`}</span>
+                   <span class="dur">${mmss(track.duration)}</span>
+                 </div>`;
+      }
+      $("timeline").innerHTML = html;
+      if (!scrolledToNow) {
+        // Scroll only the timeline (scrollIntoView would move the whole page)
+        const row = $("timeline").querySelector(".row.now");
+        if (row) $("timeline").scrollTop = row.offsetTop - $("timeline").clientHeight / 2;
+        scrolledToNow = true;
+      }
+
+      const plays = new Map(state.tracks.map(t => [t.id, 0]));
+      for (const e of entries) plays.set(e.id, plays.get(e.id) + 1);
+      const max = Math.max(1, ...plays.values());
+      $("plays").innerHTML = [...plays].sort((a, b) => b[1] - a[1]).map(([id, n]) => {
+        const t = tracks.get(id);
+        return `<span class="name">${esc(t.name)}${t.category === "music" ? "" : ` <span class="badge">${esc(t.category)}</span>`}</span>
+                ${n ? `<div class="bar" style="width:${(n / max) * 100}%"></div>` : `<span class="never">never scheduled</span>`}
+                <span class="n">${n}</span>`;
+      }).join("");
+    }
+
+    // --- Editing ---
+    function changed() { render(); }
+
+    function wheelOf(el) { return el.closest(".wheel")?.dataset.wheel; }
+    function slotIndexOf(el) { return Number(el.closest(".slot")?.dataset.index); }
+
+    function uniqueName(base) {
+      let n = 2;
+      while (`${base}-${n}` in state.wheels) n++;
+      return `${base}-${n}`;
+    }
+
+    function renameWheel(from, to) {
+      to = to.trim();
+      if (!to || to === from) return render();
+      if (to in state.wheels) { toast(`There's already a wheel called "${to}".`, true); return render(); }
+      state.wheels = Object.fromEntries(Object.entries(state.wheels).map(([k, v]) => [k === from ? to : k, v]));
+      state.hourMap = state.hourMap.map(w => (w === from ? to : w));
+      if (state.brush === from) state.brush = to;
+      changed();
+    }
+
+    function deleteWheel(name) {
+      const heir = Object.keys(state.wheels).find(k => k !== name);
+      const hours = hoursFor(name);
+      if (hours && !confirm(`Delete "${name}"? Its ${hours} hour${hours === 1 ? "" : "s"} will go to "${heir}".`)) return;
+      delete state.wheels[name];
+      state.hourMap = state.hourMap.map(w => (w === name ? heir : w));
+      if (state.brush === name) state.brush = heir;
+      changed();
+    }
+
+    const actions = {
+      "brush": el => { state.brush = el.dataset.wheel; renderHours(); },
+      "add-wheel": () => {
+        const name = uniqueName("wheel");
+        state.wheels[name] = [{ type: "music" }];
+        state.brush = name;
+        changed();
+      },
+      "delete-wheel": el => deleteWheel(wheelOf(el)),
+      "add-slot": el => { state.wheels[wheelOf(el)].push({ type: "music" }); changed(); },
+      "remove-slot": el => { state.wheels[wheelOf(el)].splice(slotIndexOf(el), 1); changed(); },
+      "up": el => move(el, -1),
+      "down": el => move(el, 1),
+      "tag": el => {
+        const slot = state.wheels[wheelOf(el)][slotIndexOf(el)];
+        const tag = el.dataset.tag;
+        const tags = slot.tags?.includes(tag) ? slot.tags.filter(t => t !== tag) : [...(slot.tags ?? []), tag];
+        if (tags.length) slot.tags = tags; else delete slot.tags;
+        changed();
+      },
+      "new-type": async () => { if (await promptNewType()) render(); },
+      "new-subfolder": async el => {
+        const parent = el.dataset.path;
+        const input = prompt(`Name for a new subfolder of ${parent} (becomes a tag), e.g. "late-night" or "rare":`);
+        if (input && await createFolder(`${parent}/${toFolderName(input)}`)) render();
+      },
+      "open-folder": async el => {
+        try { await postJson("/api/open", { path: el.dataset.path }); }
+        catch (err) { toast(err.message, true); }
+      },
+      "refresh-content": async () => {
+        setContent(await (await fetch("/api/content")).json());
+        render();
+        toast("Content refreshed.");
+      },
+      "prev-day": () => { state.day = (state.day + state.days - 1) % state.days; renderPreview(); },
+      "next-day": () => { state.day = (state.day + 1) % state.days; renderPreview(); },
+      "today": () => { state.day = todayIndex(); scrolledToNow = false; renderPreview(); },
+    };
+
+    function move(el, by) {
+      const slots = state.wheels[wheelOf(el)], i = slotIndexOf(el);
+      [slots[i], slots[i + by]] = [slots[i + by], slots[i]];
+      changed();
+    }
+
+    document.addEventListener("click", e => {
+      const el = e.target.closest("[data-action]");
+      if (el && actions[el.dataset.action] && !el.disabled) actions[el.dataset.action](el);
+    });
+
+    // Hovering a slot row lights up its slices on the clock
+    document.addEventListener("mouseover", e => {
+      if (e.target.closest(".clock svg")) return;
+      highlightSlot(e.target.closest(".wheel"), e.target.closest(".slot")?.dataset.index);
+    });
+
+    document.addEventListener("change", e => {
+      const el = e.target;
+      if (el.dataset.action === "type") {
+        const slot = state.wheels[wheelOf(el)][slotIndexOf(el)];
+        if (el.value === NEW_TYPE) {
+          promptNewType().then(name => {
+            if (name) { slot.type = name; delete slot.tags; delete slot.file; changed(); }
+            else render(); // put the dropdown back
+          });
+          return;
+        }
+        slot.type = el.value;
+        delete slot.tags; // tags and a chosen track belong to the old type
+        delete slot.file;
+        changed();
+      }
+      if (el.dataset.action === "pick") {
+        const slot = state.wheels[wheelOf(el)][slotIndexOf(el)];
+        if (el.value) { slot.file = el.value; delete slot.tags; } // tags don't apply to a fixed track
+        else delete slot.file;
+        changed();
+      }
+      if (el.dataset.action === "rename") renameWheel(wheelOf(el), el.value);
+    });
+    document.addEventListener("keydown", e => {
+      if (e.target.dataset?.action === "rename" && e.key === "Enter") e.target.blur();
+      if ((e.ctrlKey || e.metaKey) && e.key === "s") { e.preventDefault(); save(); }
+    });
+
+    // Paint hours by clicking or dragging (works for touch too)
+    let painting = false, lastPainted = null;
+    function paintAt(x, y) {
+      const cell = document.elementFromPoint(x, y)?.closest(".hour");
+      if (!cell || !state.brush) return;
+      const h = Number(cell.dataset.hour);
+      // Fill every hour since the last one, so a fast drag doesn't skip cells
+      const from = Math.min(lastPainted ?? h, h), to = Math.max(lastPainted ?? h, h);
+      lastPainted = h;
+      let any = false;
+      for (let i = from; i <= to; i++) {
+        if (state.hourMap[i] !== state.brush) { state.hourMap[i] = state.brush; any = true; }
+      }
+      if (any) changed();
+    }
+    $("hours").addEventListener("pointerdown", e => {
+      painting = true;
+      lastPainted = null;
+      e.target.releasePointerCapture?.(e.pointerId);
+      paintAt(e.clientX, e.clientY);
+    });
+    addEventListener("pointermove", e => { if (painting) paintAt(e.clientX, e.clientY); });
+    addEventListener("pointerup", () => (painting = false));
+    addEventListener("pointercancel", () => (painting = false));
+
+    // --- Save / revert ---
+    async function save() {
+      if (!isDirty()) return;
+      const res = await fetch("/api/save", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ wheels: currentJson() }),
+      });
+      const out = await res.json();
+      if (!res.ok) return toast(`Not saved:\n${out.errors.join("\n")}`, true);
+      state.saved = JSON.stringify(currentJson());
+      renderHeader();
+      toast("Saved wheels.json. Run `npm run publish` to put the new schedule on air.");
+    }
+
+    // --- View / download / import ---
+    // Same formatter the server uses, so this is exactly what Save writes
+    const fileText = () => formatWheels(currentJson());
+
+    $("view-file").addEventListener("click", () => {
+      $("file-view").textContent = fileText();
+      $("file-note").textContent = isDirty() ? "Includes unsaved changes — this is what Save will write" : "Matches the saved file";
+      $("file-dialog").showModal();
+    });
+    $("close-file").addEventListener("click", () => $("file-dialog").close());
+    // Clicking the backdrop closes it too
+    $("file-dialog").addEventListener("click", e => { if (e.target === $("file-dialog")) $("file-dialog").close(); });
+    $("copy-file").addEventListener("click", async () => {
+      try {
+        await navigator.clipboard.writeText(fileText());
+        $("copy-file").textContent = "Copied";
+      } catch {
+        $("copy-file").textContent = "Copy failed";
+      }
+      setTimeout(() => ($("copy-file").textContent = "Copy"), 1500);
+    });
+
+    $("download").addEventListener("click", () => {
+      const url = URL.createObjectURL(new Blob([fileText()], { type: "application/json" }));
+      const a = Object.assign(document.createElement("a"), { href: url, download: "wheels.json" });
+      a.click();
+      URL.revokeObjectURL(url);
+    });
+
+    $("import").addEventListener("click", () => $("import-file").click());
+    $("import-file").addEventListener("change", async e => {
+      const file = e.target.files[0];
+      e.target.value = ""; // allow re-importing the same file
+      if (!file) return;
+
+      let json;
+      try { json = JSON.parse(await file.text()); }
+      catch { return toast(`Couldn't import ${file.name}: it isn't valid JSON.`, true); }
+
+      // Structure only — tracks that don't exist yet just show up as warnings in the preview
+      const { errors } = validateWheels(json);
+      if (errors.length) return toast(`Couldn't import ${file.name}:\n${errors.join("\n")}`, true);
+      if (isDirty() && !confirm("Replace your unsaved changes with the imported file?")) return;
+
+      applyWheels(json);
+      render();
+      toast(`Imported ${file.name}. Check the preview, then Save to write wheels.json.`);
+    });
+
+    $("save").addEventListener("click", save);
+    $("revert").addEventListener("click", () => { if (confirm("Discard your unsaved changes?")) load(); });
+    addEventListener("beforeunload", e => { if (isDirty()) e.preventDefault(); });
+
+    load().catch(err => toast(`Couldn't load the scheduler: ${err.message}`, true));
+  </script>
+</body>
+</html>

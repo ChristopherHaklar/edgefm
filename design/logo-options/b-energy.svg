@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 560 210">
+  <title>EdgeFM — option B (italic red and yellow, after 1980s FM station logos)</title>
+  <defs>
+    <g id="letters" font-family="'Arial Black', 'Segoe UI Black', Impact, sans-serif" font-weight="900">
+      <text x="40" y="132" font-size="116" letter-spacing="-2">EDGE</text>
+    </g>
+    <g id="fm" font-family="'Arial Black', 'Segoe UI Black', Impact, sans-serif" font-weight="900">
+      <text x="404" y="132" font-size="82" letter-spacing="-2">FM</text>
+    </g>
+  </defs>
+  <rect width="560" height="210" fill="#1b2466"/>
+  <!-- Everything leans forward like the classic italic station logos -->
+  <g transform="skewX(-12) translate(24 0)" stroke-linejoin="round" paint-order="stroke">
+    <!-- Drop shadow -->
+    <use href="#letters" x="7" y="7" fill="#0b1140" stroke="#0b1140" stroke-width="14"/>
+    <use href="#fm" x="7" y="7" fill="#0b1140" stroke="#0b1140" stroke-width="14"/>
+    <!-- Red letters with a yellow outline; FM the other way round -->
+    <use href="#letters" fill="#e3262b" stroke="#ffd21f" stroke-width="12"/>
+    <use href="#fm" fill="#ffd21f" stroke="#e3262b" stroke-width="12"/>
+  </g>
+  <text x="280" y="186" text-anchor="middle" fill="#ffd21f" font-family="'Arial Black', 'Segoe UI Black', Impact, sans-serif"
+        font-size="24" font-weight="900" letter-spacing="5">MUSIC FROM THE EDGE</text>
+</svg>

@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>logo builder</title>
+<script src="https://cdn.jsdelivr.net/npm/opentype.js@1.3.4/dist/opentype.min.js"></script>
+</head><body>
+<button onclick="build()">Build</button>
+<p id="files"></p>
+<script>
+// Builds the EdgeFM logo and icons from Fredoka Bold (Google Fonts, OFL), with the letters
+// converted to outlines so they look the same everywhere. Open this page over http (any
+// static server, e.g. `npx serve design/logo-options`), click Build, and put the downloaded
+// files in public/. Page and output checks: final.html.
+const FONT_URL = "https://cdn.jsdelivr.net/fontsource/fonts/fredoka@latest/latin-700-normal.ttf";
+const BLUE = "#1f5fb8", WHITE = "#ffffff";
+
+// Text → one SVG path, laid out left to right with kerning and extra tracking (px)
+function shape(font, text, size, tracking = 0) {
+  const scale = size / font.unitsPerEm;
+  const glyphs = font.stringToGlyphs(text);
+  let x = 0, d = "";
+  glyphs.forEach((g, i) => {
+    d += g.getPath(x, 0, size).toPathData(2);
+    x += g.advanceWidth * scale + tracking;
+    if (i < glyphs.length - 1) x += font.getKerningValue(g, glyphs[i + 1]) * scale;
+  });
+  return { d, width: x - tracking, cap: font.tables.os2.sCapHeight * scale };
+}
+
+// The striped echo: back to front, a fat white shape with a thinner blue one on top leaves
+// a thin white rim, so the letters trail off down-right in stripes
+function echoLayers(ref, steps, step, fat, thin) {
+  let out = "";
+  for (let i = steps; i >= 1; i--) {
+    const o = i * step;
+    out += `<use href="#${ref}" x="${o}" y="${o}" fill="${WHITE}" stroke="${WHITE}" stroke-width="${fat}"/>`;
+    out += `<use href="#${ref}" x="${o}" y="${o}" fill="${BLUE}" stroke="${BLUE}" stroke-width="${thin}"/>`;
+  }
+  return out;
+}
+
+function logo(font) {
+  const word = shape(font, "EDGE FM", 120, -1);
+  const tag = shape(font, "MUSIC FROM THE EDGE", 25, 5);
+  const pad = 30, steps = 3, step = 7, depth = steps * step;
+  const W = Math.ceil(pad * 2 + word.width + depth);
+  const wordY = pad + word.cap;
+  const tagY = wordY + depth + 22 + tag.cap; // tagline baseline, clear of the stripes
+  const H = Math.ceil(tagY + pad);
+  const tagX = (W - tag.width) / 2;
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}">
+  <title>EdgeFM</title>
+  <style>
+    /* Small logos drop the striped echo (and then the tagline): they stop being readable */
+    @media (max-width: 300px) { .echo { display: none; } }
+    @media (max-width: 170px) { .tagline { display: none; } }
+  </style>
+  <defs><path id="word" d="${word.d}" transform="translate(${pad} ${wordY.toFixed(2)})"/></defs>
+  <rect width="${W}" height="${H}" rx="8" fill="${BLUE}"/>
+  <g stroke-linejoin="round">
+    <g class="echo">${echoLayers("word", steps, step, 11, 5.5)}</g>
+    <use href="#word" fill="${WHITE}" stroke="${WHITE}" stroke-width="4"/>
+  </g>
+  <path class="tagline" fill="${WHITE}" d="${tag.d}" transform="translate(${tagX.toFixed(2)} ${tagY.toFixed(2)})"/>
+</svg>
+`;
+}
+
+// A single E centred in a square tile; `echo` adds the stripes (large icons only)
+function icon(font, size, { rounded, echo }) {
+  const s = size / 64;
+  const e = shape(font, "E", 42 * s);
+  const steps = echo ? 2 : 0, step = 3.5 * s, depth = steps * step;
+  const x = (size - e.width - depth) / 2, y = (size + e.cap - depth) / 2;
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${size} ${size}">
+  <title>EdgeFM</title>
+  <defs><path id="e" d="${e.d}" transform="translate(${x.toFixed(2)} ${y.toFixed(2)})"/></defs>
+  <rect width="${size}" height="${size}"${rounded ? ` rx="${12 * s}"` : ""} fill="${BLUE}"/>
+  <g stroke-linejoin="round">
+    ${echo ? echoLayers("e", steps, step, 6 * s, 3 * s) : ""}
+    <use href="#e" fill="${WHITE}" stroke="${WHITE}" stroke-width="${2.5 * s}"/>
+  </g>
+</svg>
+`;
+}
+
+// Offers each file as a download (and saves it too when served by a server that accepts POST /save/<name>)
+async function save(name, body) {
+  const blob = body instanceof Blob ? body : new Blob([body], { type: "image/svg+xml" });
+  const a = Object.assign(document.createElement("a"), { href: URL.createObjectURL(blob), download: name, textContent: name });
+  document.getElementById("files").append(a, document.createElement("br"));
+  try { await fetch("/save/" + name, { method: "POST", body: blob }); } catch {}
+}
+
+async function png(svgText, w, h, name) {
+  const img = new Image();
+  img.src = URL.createObjectURL(new Blob([svgText], { type: "image/svg+xml" }));
+  await img.decode();
+  const c = Object.assign(document.createElement("canvas"), { width: w, height: h });
+  c.getContext("2d").drawImage(img, 0, 0, w, h);
+  await save(name, await new Promise(r => c.toBlob(r, "image/png")));
+}
+
+window.build = async () => {
+  const font = opentype.parse(await (await fetch(FONT_URL)).arrayBuffer());
+  const files = {
+    "logo.svg": logo(font),
+    "favicon.svg": icon(font, 64, { rounded: true, echo: false }),     // tabs: always small, so no stripes
+    "apple-touch-icon.svg": icon(font, 180, { rounded: false, echo: true }), // iOS rounds the corners itself
+  };
+  for (const [name, text] of Object.entries(files)) await save(name, text);
+  await png(files["favicon.svg"], 32, 32, "favicon-32.png");
+  await png(files["apple-touch-icon.svg"], 180, 180, "apple-touch-icon.png");
+  return Object.fromEntries(Object.entries(files).map(([k, v]) => [k, v.length]));
+};
+</script>
+</body></html>

@@ -7,8 +7,9 @@
 import { spawnSync, execSync } from "child_process";
 import { writeFileSync, mkdirSync, existsSync } from "fs";
 import { join, dirname } from "path";
+import { fileURLToPath } from "url";
 
-const ROOT = new URL("..", import.meta.url).pathname;
+const ROOT = fileURLToPath(new URL("..", import.meta.url));
 
 const tracks = [
   // Music — longer tracks, distinct frequencies
@@ -40,19 +41,19 @@ const tracks = [
 
   // Bumpers — short
   {
-    path: "content/bumpers/common/demo_bumper_1.mp3",
+    path: "content/bumper/common/demo_bumper_1.mp3",
     freq: 880, duration: 15,
     meta: { name: "Demo Common Bumper A" },
   },
   {
-    path: "content/bumpers/common/demo_bumper_2.mp3",
+    path: "content/bumper/common/demo_bumper_2.mp3",
     freq: 990, duration: 20,
     meta: { name: "Demo Common Bumper B" },
   },
 
   // Rare bumper — low weight
   {
-    path: "content/bumpers/rare/demo_rare_bumper.mp3",
+    path: "content/bumper/rare/demo_rare_bumper.mp3",
     freq: 1320, duration: 10,
     meta: { name: "Demo Rare Bumper (Easter Egg!)", weight: 0.05 },
   },
