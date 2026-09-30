@@ -64,7 +64,22 @@
     .wheel-name { flex: 0 1 180px; min-width: 0; font-weight: 600; background: transparent; border: 1px solid transparent; border-radius: 4px; padding: 2px 6px; }
     .wheel-name:hover, .wheel-name:focus { border-color: var(--line); background: var(--bg); }
     .wheel-head .muted { flex: 1; font-size: 12px; }
+    .wheel-body { display: flex; flex-wrap: wrap; gap: 4px 16px; align-items: flex-start; }
+    .wheel-body .slots { flex: 1 1 360px; min-width: 0; }
+    .clock { flex: 0 0 240px; margin: 0 auto 8px; text-align: center; }
+    .clock svg { display: block; width: 240px; height: 240px; }
+    .clock path { stroke: var(--panel); stroke-width: 1; }
+    .clock path.hl { stroke: var(--text); stroke-width: 2; }
+    .clock .n { fill: #fff; font: 600 10px var(--mono); pointer-events: none; }
+    .clock .tick { stroke: var(--muted); }
+    .clock .mins { fill: var(--muted); font: 9px var(--mono); }
+    .clock .mid { fill: var(--text); font: 600 13px var(--mono); }
+    .clock .mid-sub { fill: var(--muted); font: 8px system-ui, sans-serif; }
+    .clock p { margin: 2px 0 0; font-size: 12px; color: var(--muted); }
+    .legend { display: flex; flex-wrap: wrap; justify-content: center; gap: 2px 10px; font-size: 12px; margin-top: 4px; }
+    .legend span { display: inline-flex; align-items: center; gap: 4px; }
     .slots { list-style: none; margin: 0 0 8px; padding: 0; counter-reset: slot; }
+    .slot.hl { background: var(--soft); }
     .slot { display: grid; grid-template-columns: 22px 110px minmax(0, 1fr) auto auto; gap: 8px; align-items: center;
             padding: 5px 0; border-top: 1px solid var(--line); counter-increment: slot; }
     .slot::before { content: counter(slot); color: var(--muted); font: 12px var(--mono); text-align: right; }
@@ -124,6 +139,7 @@
       <div class="panel">
         <div class="panel-head"><h2>Wheels</h2><button data-action="add-wheel">+ New wheel</button></div>
         <p class="hint">Each wheel plays its slots in order, then repeats. A slot picks a random track of its type. Highlighted tags narrow the pick to tracks with all of those tags.</p>
+        <p class="hint">Each clock is an estimate of one hour: every slot gets the average length of its tracks, and the wheel repeats (lighter slices) until the hour is full. On air, a wheel carries on from where it left off rather than restarting on the hour.</p>
         <div id="wheels"></div>
       </div>
     </section>
@@ -155,6 +171,8 @@
     const DAY = 24 * 60 * 60;
     const COLORS = ["#2f6fe4", "#d98a1c", "#2c9c72", "#a64fc2", "#d4493f", "#1f95ad", "#7d7428", "#c4507f"];
     const BASE_TYPES = ["music", "bumper", "dj-intro"];
+    const TYPE_COLORS = { "music": "#4a78d8", "bumper": "#3aa981", "dj-intro": "#e09a3a" };
+    const EXTRA_TYPE_COLORS = ["#9b6fd0", "#d05c5c", "#3b9fb8", "#a0892c"];
 
     const state = {
       wheels: {},        // name → slots, edited in place
@@ -245,6 +263,77 @@
       return [...new Set(state.tracks.filter(t => t.category === type).flatMap(t => t.tags))].sort();
     }
 
+    function typeColor(type) {
+      if (TYPE_COLORS[type]) return TYPE_COLORS[type];
+      const extra = [...new Set(state.tracks.map(t => t.category))].filter(t => !TYPE_COLORS[t]);
+      return EXTRA_TYPE_COLORS[Math.max(0, extra.indexOf(type)) % EXTRA_TYPE_COLORS.length];
+    }
+
+    // Weighted average track length, matching how often each track gets picked
+    function expectedSeconds(pool) {
+      const total = pool.reduce((s, t) => s + (t.weight ?? 1), 0);
+      return pool.reduce((s, t) => s + (t.weight ?? 1) * t.duration, 0) / total;
+    }
+
+    // Radio-style clock: the wheel's slots laid round one hour, repeating until it's full
+    function clockSvg(slots) {
+      const playable = slots
+        .map((slot, i) => ({ slot, i, pool: getPool(catalog(), slot) }))
+        .filter(p => p.pool.length)
+        .map(p => ({ ...p, seconds: expectedSeconds(p.pool) }));
+      if (!playable.length) return "";
+
+      const HOUR = 3600, C = 100, R = 72, R0 = 24;
+      const xy = (r, sec) => {
+        const a = (sec / HOUR) * 2 * Math.PI;
+        return [C + r * Math.sin(a), C - r * Math.cos(a)].map(v => v.toFixed(2));
+      };
+      const at = (r, sec) => xy(r, sec).join(" ");
+
+      let slices = "", t = 0, n = 0;
+      while (t < HOUR) {
+        const p = playable[n % playable.length];
+        const end = Math.min(HOUR - 0.01, t + p.seconds); // a full 360° arc would collapse to a point
+        const large = end - t > HOUR / 2 ? 1 : 0;
+        const tags = p.slot.tags?.length ? ` [${p.slot.tags.join(", ")}]` : "";
+        slices += `<path data-slot="${p.i}" fill="${typeColor(p.slot.type)}" opacity="${n < playable.length ? 1 : 0.55}"
+          d="M${at(R, t)} A${R} ${R} 0 ${large} 1 ${at(R, end)} L${at(R0, end)} A${R0} ${R0} 0 ${large} 0 ${at(R0, t)}Z">
+          <title>Slot ${p.i + 1}: ${esc(p.slot.type)}${esc(tags)}
+~${mmss(p.seconds)} (average of ${p.pool.length} track${p.pool.length > 1 ? "s" : ""})
+from :${pad(Math.floor(t / 60))}</title></path>`;
+        if ((end - t) / HOUR * 360 >= 7) {
+          const [x, y] = xy((R + R0) / 2 + 6, (t + end) / 2);
+          slices += `<text class="n" x="${x}" y="${y}" text-anchor="middle" dominant-baseline="central">${p.i + 1}</text>`;
+        }
+        t = end + 0.01;
+        n++;
+      }
+
+      let ticks = "";
+      for (let m = 0; m < 60; m++) {
+        const [x1, y1] = xy(R + 3, m * 60), [x2, y2] = xy(R + (m % 5 ? 6 : 10), m * 60);
+        ticks += `<line class="tick" x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke-width="${m % 15 ? 0.6 : 1.4}"/>`;
+      }
+      for (const m of [0, 15, 30, 45]) {
+        const [x, y] = xy(R + 18, m * 60);
+        ticks += `<text class="mins" x="${x}" y="${y}" text-anchor="middle" dominant-baseline="central">:${pad(m)}</text>`;
+      }
+
+      const pass = playable.reduce((s, p) => s + p.seconds, 0);
+      const skipped = slots.length - playable.length;
+      const types = [...new Set(playable.map(p => p.slot.type))];
+      return `
+        <figure class="clock">
+          <svg viewBox="0 0 200 200" role="img" aria-label="Estimated hour for this wheel">
+            ${ticks}${slices}
+            <text class="mid" x="${C}" y="${C - 3}" text-anchor="middle">${(HOUR / pass).toFixed(1)}×</text>
+            <text class="mid-sub" x="${C}" y="${C + 9}" text-anchor="middle">per hour</text>
+          </svg>
+          <div class="legend">${types.map(t => `<span><i class="dot" style="background:${typeColor(t)}"></i>${esc(t)}</span>`).join("")}</div>
+          <p>One pass ≈ ${mmss(pass)}${skipped ? ` · ${skipped} empty slot${skipped > 1 ? "s" : ""} skipped` : ""}</p>
+        </figure>`;
+    }
+
     function slotRow(slot, i, count) {
       const pool = getPool(catalog(), slot);
       const types = [...new Set([...BASE_TYPES, ...state.tracks.map(t => t.category), slot.type])];
@@ -281,7 +370,10 @@
               <span class="muted">${slots.length} slot${slots.length === 1 ? "" : "s"} · ${hoursFor(name)}h a day</span>
               <button class="icon" data-action="delete-wheel" ${names.length === 1 ? "disabled" : ""} aria-label="Delete wheel">✕</button>
             </div>
-            <ol class="slots">${slots.map((slot, i) => slotRow(slot, i, slots.length)).join("")}</ol>
+            <div class="wheel-body">
+              ${clockSvg(slots)}
+              <ol class="slots">${slots.map((slot, i) => slotRow(slot, i, slots.length)).join("")}</ol>
+            </div>
             <button data-action="add-slot">+ Add slot</button>
           </article>`;
       }).join("");
@@ -426,6 +518,15 @@
     document.addEventListener("click", e => {
       const el = e.target.closest("[data-action]");
       if (el && actions[el.dataset.action] && !el.disabled) actions[el.dataset.action](el);
+    });
+
+    // Hovering a clock slice highlights its slot row, and vice versa
+    document.addEventListener("mouseover", e => {
+      document.querySelectorAll(".hl").forEach(el => el.classList.remove("hl"));
+      const wheel = e.target.closest(".wheel");
+      const index = e.target.closest("[data-slot]")?.dataset.slot ?? e.target.closest(".slot")?.dataset.index;
+      if (!wheel || index == null) return;
+      wheel.querySelectorAll(`[data-slot="${index}"], .slot[data-index="${index}"]`).forEach(el => el.classList.add("hl"));
     });
 
     document.addEventListener("change", e => {
