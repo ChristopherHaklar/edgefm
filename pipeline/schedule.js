@@ -46,6 +46,8 @@ export function wheelForHour(wheels, hour) {
 }
 
 export function getPool(catalog, slotDef) {
+  // A slot naming a file (path under content/) always plays that one track
+  if (slotDef.file) return catalog.tracks.filter(t => t.file === slotDef.file);
   return catalog.tracks.filter(t => {
     if (t.category !== slotDef.type) return false;
     if (slotDef.tags) return slotDef.tags.every(tag => t.tags.includes(tag));
@@ -65,7 +67,9 @@ export function validateWheels(wheels, catalog) {
     slots.forEach((slot, i) => {
       if (!slot?.type) errors.push(`wheel "${name}" slot ${i + 1} has no type`);
       else if (catalog && getPool(catalog, slot).length === 0) {
-        warnings.push(`wheel "${name}" slot ${i + 1} (${slot.type}${slot.tags?.length ? ` [${slot.tags}]` : ""}) has no matching tracks and will be skipped`);
+        warnings.push(slot.file
+          ? `wheel "${name}" slot ${i + 1} plays "${slot.file}", which isn't in content/ and will be skipped`
+          : `wheel "${name}" slot ${i + 1} (${slot.type}${slot.tags?.length ? ` [${slot.tags}]` : ""}) has no matching tracks and will be skipped`);
       }
     });
     if (catalog && slots.length && slots.every(s => s?.type && getPool(catalog, s).length === 0)) {

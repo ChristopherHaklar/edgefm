@@ -114,6 +114,7 @@ function scanContent() {
 
         catalog.tracks.push({
           id: trackId,
+          file: relative(CONTENT_DIR, fullPath).split(sep).join("/"), // for slots that name a file
           name: meta.name ?? info.title ?? basename(entry.name, extname(entry.name)),
           artist: meta.artist ?? info.artist,
           category,

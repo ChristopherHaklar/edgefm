@@ -170,6 +170,14 @@ Or edit `wheels.json` by hand to change the slot sequence. Each slot has a `type
 }
 ```
 
+To play one exact track every time a slot comes round, name its path under `content/` with `file` (tags are ignored):
+
+```json
+{ "type": "music", "file": "music/crossing/Grand-Opening-PM-Music.mp3" }
+```
+
+If that file is renamed or removed, the slot is skipped with a warning.
+
 Multiple named wheels with different hour ranges are supported — add entries to `wheels` and split the `hours` ranges in `schedule` to add time-of-day variation. Hours are UTC and can be a single hour (`"9"`), a range (`"6-17"`), or a range that wraps past midnight (`"22-5"`). The first matching entry wins; hours with no entry use the `default` wheel.
 
 ## Endpoints

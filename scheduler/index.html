@@ -97,6 +97,8 @@
     .slot::before { content: counter(slot); color: var(--muted); font: 12px var(--mono); text-align: right; }
     .slot select { background: var(--bg); border: 1px solid var(--line); border-radius: 4px; padding: 2px 4px; min-width: 0; }
     .tags { display: flex; flex-wrap: wrap; gap: 4px; }
+    .pick { max-width: 100%; background: var(--bg); border: 1px solid var(--line); border-radius: 4px; padding: 2px 4px; font-size: 12px; }
+    .pick.fixed { border-color: var(--accent); }
     .tag { font-size: 12px; padding: 1px 8px; border-radius: 999px; background: transparent; color: var(--muted); }
     .tag.on { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }
     .pool { font-size: 12px; color: var(--muted); white-space: nowrap; }
@@ -394,7 +396,7 @@
         const end = Math.min(HOUR - 0.01, t + p.seconds); // a full 360° arc would collapse to a point
         const large = end - t > HOUR / 2 ? 1 : 0;
         slices += `<path data-slot="${p.i}" data-t="${t.toFixed(2)}" data-end="${end.toFixed(2)}" data-len="${p.seconds.toFixed(1)}"
-          data-type="${esc(p.slot.type)}" fill="${typeColor(p.slot.type)}" opacity="${n < playable.length ? 1 : 0.55}"
+          data-type="${esc(p.slot.file ? p.pool[0].name : p.slot.type)}" fill="${typeColor(p.slot.type)}" opacity="${n < playable.length ? 1 : 0.55}"
           d="M${at(R, t)} A${R} ${R} 0 ${large} 1 ${at(R, end)} L${at(R0, end)} A${R0} ${R0} 0 ${large} 0 ${at(R0, t)}Z"/>`;
         if ((end - t) / HOUR * 360 >= 7) {
           const [x, y] = xy((R + R0) / 2 + 6, (t + end) / 2);
@@ -436,17 +438,27 @@
       const pool = getPool(catalog(), slot);
       const types = [...new Set([...BASE_TYPES, ...state.tracks.map(t => t.category), slot.type])];
       const tags = [...new Set([...tagsFor(slot.type), ...(slot.tags ?? [])])]; // keep unknown tags removable
+      const choices = state.tracks.filter(t => t.category === slot.type).sort((a, b) => a.name.localeCompare(b.name));
+      // Several clips can share a name (e.g. "Station ID"), so add the file name to tell them apart
+      const label = t => choices.filter(c => c.name === t.name).length > 1 ? `${t.name} (${t.file.split("/").pop()})` : t.name;
+      const missing = slot.file && !choices.some(t => t.file === slot.file);
+      const pick = `
+        <select class="pick ${slot.file ? "fixed" : ""}" data-action="pick" aria-label="Which track plays">
+          <option value="">Random ${esc(slot.type)}</option>
+          ${missing ? `<option value="${esc(slot.file)}" selected>Missing: ${esc(slot.file)}</option>` : ""}
+          ${choices.map(t => `<option value="${esc(t.file)}" ${t.file === slot.file ? "selected" : ""}>${esc(label(t))}</option>`).join("")}
+        </select>`;
+      const tagChips = tags.length
+        ? tags.map(t => `<button class="tag ${slot.tags?.includes(t) ? "on" : ""}" data-action="tag" data-tag="${esc(t)}">${esc(t)}</button>`).join("")
+        : `<span class="muted">no tags</span>`;
       return `
         <li class="slot" data-index="${i}">
           <select data-action="type" aria-label="Slot type">
             ${types.map(t => `<option ${t === slot.type ? "selected" : ""}>${esc(t)}</option>`).join("")}
           </select>
-          <div class="tags">
-            ${tags.length ? tags.map(t => `<button class="tag ${slot.tags?.includes(t) ? "on" : ""}" data-action="tag" data-tag="${esc(t)}">${esc(t)}</button>`).join("")
-                          : `<span class="muted">no tags</span>`}
-          </div>
+          <div class="tags">${pick}${slot.file ? "" : tagChips}</div>
           <span class="pool ${pool.length ? "" : "empty"}" title="${esc(pool.map(t => t.name).join("\n"))}">
-            ${pool.length ? `${pool.length} track${pool.length > 1 ? "s" : ""}` : "no tracks"}
+            ${slot.file ? (pool.length ? "always this" : "not found") : pool.length ? `${pool.length} track${pool.length > 1 ? "s" : ""}` : "no tracks"}
           </span>
           <span class="moves">
             <button class="icon" data-action="up" ${i === 0 ? "disabled" : ""} aria-label="Move up">↑</button>
@@ -638,7 +650,14 @@
       if (el.dataset.action === "type") {
         const slot = state.wheels[wheelOf(el)][slotIndexOf(el)];
         slot.type = el.value;
-        delete slot.tags; // tags belong to the old type
+        delete slot.tags; // tags and a chosen track belong to the old type
+        delete slot.file;
+        changed();
+      }
+      if (el.dataset.action === "pick") {
+        const slot = state.wheels[wheelOf(el)][slotIndexOf(el)];
+        if (el.value) { slot.file = el.value; delete slot.tags; } // tags don't apply to a fixed track
+        else delete slot.file;
         changed();
       }
       if (el.dataset.action === "rename") renameWheel(wheelOf(el), el.value);
