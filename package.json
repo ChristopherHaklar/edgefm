@@ -8,6 +8,7 @@
     "dev": "wrangler dev",
     "pipeline": "node pipeline/index.js",
     "demo": "node demo/generate.js",
+    "demo:voices": "node demo/voices.js",
     "scheduler": "node scheduler/server.js"
   },
   "devDependencies": {

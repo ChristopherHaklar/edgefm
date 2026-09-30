@@ -55,6 +55,7 @@ function segmentTrack(filePath, outDir, trackId, rawDuration) {
     "-c:a", "aac",
     "-b:a", "128k",
     "-ar", "44100",
+    "-ac", "2",                          // keep every segment stereo, even from mono sources
     "-f", "segment",
     "-segment_time", String(SEGMENT_DURATION),
     "-segment_format", "mpegts",
