@@ -74,15 +74,24 @@
     .wheel-head .muted { flex: 1; font-size: 12px; }
     .wheel-body { display: flex; flex-wrap: wrap; gap: 4px 16px; align-items: flex-start; }
     .wheel-body .slots { flex: 1 1 360px; min-width: 0; }
-    .clock { flex: 3 1 300px; max-width: 460px; margin: 0 auto 8px; text-align: center; }
+    .clock { position: relative; flex: 3 1 300px; max-width: 460px; margin: 0 auto 8px; text-align: center; }
+    .clock svg.zoomed { cursor: grab; }
+    .clock svg.dragging { cursor: grabbing; }
+    .zoom-ctl { display: flex; justify-content: center; align-items: center; gap: 4px; margin-top: 4px; font-size: 12px; }
+    .zoom-ctl button { padding: 0 8px; line-height: 22px; }
+    .zoom-ctl span { min-width: 3.2em; color: var(--muted); font-family: var(--mono); }
+    .clock .hover-info { min-height: 1.45em; color: var(--text); }
+    .clock .hover-info.idle { color: var(--muted); }
     .clock svg { display: block; width: 100%; height: auto; }
-    .clock path { stroke: var(--panel); stroke-width: 1; }
-    .clock path.hl { stroke: var(--text); stroke-width: 1.5; }
-    .clock path.hov { stroke: var(--text); stroke-width: 2.5; filter: brightness(1.3); }
+    .clock path, .clock line { vector-effect: non-scaling-stroke; }
+    .clock path { stroke: var(--panel); stroke-width: 1.5; }
+    .clock path.hl { stroke: var(--text); stroke-width: 2.5; }
+    .clock path.hov { stroke: var(--text); stroke-width: 4; filter: brightness(1.3); }
     .clock svg.pointing { cursor: pointer; }
-    .clock .n { fill: #fff; font: 600 10px var(--mono); pointer-events: none; }
+    .clock .n { fill: #fff; font-family: var(--mono); font-weight: 600; font-size: calc(10px / var(--k, 1)); pointer-events: none; }
+    .clock .rl { fill: #fff; font-family: system-ui, sans-serif; font-size: calc(7.5px / var(--k, 1)); pointer-events: none; }
     .clock .tick { stroke: var(--muted); }
-    .clock .mins { fill: var(--muted); font: 9px var(--mono); }
+    .clock .mins { fill: var(--muted); font-family: var(--mono); font-size: calc(9px / var(--k, 1)); }
     .clock .mid { fill: var(--text); font: 600 12px var(--mono); }
     .clock .mid-sub { fill: var(--muted); font: 7.5px system-ui, sans-serif; }
     .slot.flash { animation: flash 1.2s ease-out; }
@@ -212,6 +221,7 @@
       hourMap: [],       // UTC hour → wheel name
       tracks: [], days: 30, epochMs: 0, catalogMissing: false,
       brush: null, day: 0, saved: "",
+      zoom: {},          // wheel name → { k, x, y } clock zoom
     };
 
     const $ = id => document.getElementById(id);
@@ -319,14 +329,15 @@
     // Which slice is under the pointer? Short slices get a wider target and win over
     // their neighbours inside it, so a 10s bumper is as easy to hit as a 90s track.
     function sliceAt(svg, e) {
-      const box = svg.getBoundingClientRect(), scale = box.width / 200;
-      const dx = (e.clientX - box.left) / scale - CLOCK.C, dy = (e.clientY - box.top) / scale - CLOCK.C;
+      const pt = toSvg(svg, e), k = parseFloat(svg.style.getPropertyValue("--k")) || 1;
+      const dx = pt.x - CLOCK.C, dy = pt.y - CLOCK.C;
       const dist = Math.hypot(dx, dy);
       if (dist < CLOCK.R0 || dist > CLOCK.R + 12) return null;
       const sec = ((Math.atan2(dx, -dy) / (2 * Math.PI) + 1) % 1) * CLOCK.HOUR;
       let best = null;
       for (const path of svg.querySelectorAll("path[data-slot]")) {
-        const t = +path.dataset.t, end = +path.dataset.end, grow = Math.max(0, (MIN_TARGET - (end - t)) / 2);
+        // Zoomed in, slices are bigger on screen, so they need less help
+        const t = +path.dataset.t, end = +path.dataset.end, grow = Math.max(0, (MIN_TARGET / k - (end - t)) / 2);
         // Check either side of :00 too, so targets near the top wrap round
         const hit = [sec, sec - CLOCK.HOUR, sec + CLOCK.HOUR].some(x => x >= t - grow && x < end + grow);
         if (hit && (!best || end - t < best.end - best.t)) best = { path, t, end };
@@ -344,13 +355,96 @@
       wheel.querySelectorAll(`[data-slot="${index}"], .slot[data-index="${index}"]`).forEach(el => el.classList.add("hl"));
     }
 
+    const ZOOM_HINT = "Scroll or double-click to zoom · drag to pan";
+    const MAX_ZOOM = 12;
+    const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+    const toSvg = (svg, e) => new DOMPoint(e.clientX, e.clientY).matrixTransform(svg.getScreenCTM().inverse());
+
+    // Zoom is kept per wheel so it survives re-renders while editing
+    function applyZoom(svg, z) {
+      const w = 200 / z.k;
+      svg.setAttribute("viewBox", `${z.x} ${z.y} ${w} ${w}`);
+      svg.style.setProperty("--k", z.k);
+      svg.classList.toggle("zoomed", z.k > 1);
+      for (const g of svg.querySelectorAll("g.lbl")) {
+        const deg = +g.dataset.deg;
+        // Full label once the slice is wide enough on screen for a line of text, else just the number
+        const long = z.k >= 2 && deg * z.k * z.k >= 11;
+        g.children[0].style.display = !long && deg * z.k >= 7 ? "" : "none";
+        g.children[1].style.display = long ? "" : "none";
+      }
+      svg.querySelectorAll(".mins.minor").forEach(el => (el.style.display = z.k >= 2.5 ? "" : "none"));
+      svg.querySelector(".readout").style.display = z.k >= 2 ? "none" : ""; // the line under the clock takes over
+      const fig = svg.closest(".clock");
+      fig.querySelector(".zoom-level").textContent = `${z.k < 10 ? z.k.toFixed(1) : Math.round(z.k)}×`;
+      fig.querySelector('[data-zoom="in"]').disabled = z.k >= MAX_ZOOM;
+      fig.querySelector('[data-zoom="out"]').disabled = fig.querySelector('[data-zoom="reset"]').disabled = z.k <= 1;
+    }
+
     function wireClocks() {
       for (const svg of document.querySelectorAll(".clock svg")) {
         const wheel = svg.closest(".wheel");
+        const fig = svg.closest(".clock");
+        const info = fig.querySelector(".hover-info");
+        const z = (state.zoom[wheel.dataset.wheel] ??= { k: 1, x: 0, y: 0 });
+        applyZoom(svg, z);
+
+        const zoomAt = (pt, k) => {
+          k = clamp(k, 1, MAX_ZOOM);
+          const ratio = (200 / k) / (200 / z.k);
+          z.x = clamp(pt.x - (pt.x - z.x) * ratio, 0, 200 - 200 / k);
+          z.y = clamp(pt.y - (pt.y - z.y) * ratio, 0, 200 - 200 / k);
+          z.k = k;
+          applyZoom(svg, z);
+        };
+        // Buttons zoom on the middle of the view, but never into the empty hub:
+        // from there, aim at the ring in the same direction (or :00 from dead centre)
+        const viewCentre = () => {
+          const x = z.x + 100 / z.k, y = z.y + 100 / z.k, ring = (CLOCK.R + CLOCK.R0) / 2;
+          const dx = x - CLOCK.C, dy = y - CLOCK.C, dist = Math.hypot(dx, dy);
+          if (dist >= ring) return { x, y };
+          const a = dist < 1 ? 0 : Math.atan2(dx, -dy);
+          return { x: CLOCK.C + ring * Math.sin(a), y: CLOCK.C - ring * Math.cos(a) };
+        };
+
+        svg.addEventListener("wheel", e => {
+          e.preventDefault();
+          zoomAt(toSvg(svg, e), z.k * Math.exp(-e.deltaY * 0.002));
+        }, { passive: false });
+        svg.addEventListener("dblclick", e => { e.preventDefault(); zoomAt(toSvg(svg, e), z.k * 2); });
+        fig.querySelector('[data-zoom="in"]').addEventListener("click", () => zoomAt(viewCentre(), z.k * 1.6));
+        fig.querySelector('[data-zoom="out"]').addEventListener("click", () => zoomAt(viewCentre(), z.k / 1.6));
+        fig.querySelector('[data-zoom="reset"]').addEventListener("click", () => zoomAt(viewCentre(), 1));
+
+        // Drag to pan while zoomed; a drag shouldn't also count as a click on a slice
+        let drag = null, dragged = false;
+        svg.addEventListener("pointerdown", e => {
+          if (z.k <= 1 || e.button !== 0) return;
+          drag = { cx: e.clientX, cy: e.clientY, x: z.x, y: z.y };
+          dragged = false;
+          svg.setPointerCapture(e.pointerId);
+        });
+        svg.addEventListener("pointermove", e => {
+          if (!drag) return;
+          const dx = e.clientX - drag.cx, dy = e.clientY - drag.cy;
+          if (!dragged && Math.hypot(dx, dy) < 4) return;
+          dragged = true;
+          svg.classList.add("dragging");
+          const unitsPerPx = (200 / z.k) / svg.getBoundingClientRect().width;
+          z.x = clamp(drag.x - dx * unitsPerPx, 0, 200 - 200 / z.k);
+          z.y = clamp(drag.y - dy * unitsPerPx, 0, 200 - 200 / z.k);
+          applyZoom(svg, z);
+        });
+        const endDrag = () => { drag = null; svg.classList.remove("dragging"); };
+        svg.addEventListener("pointerup", endDrag);
+        svg.addEventListener("pointercancel", endDrag);
+
         const reset = () => {
           highlightSlot(null);
           svg.classList.remove("pointing");
           setReadout(svg, JSON.parse(svg.querySelector(".readout").dataset.default));
+          info.textContent = ZOOM_HINT;
+          info.classList.add("idle");
         };
         svg.addEventListener("mousemove", e => {
           const path = sliceAt(svg, e);
@@ -360,9 +454,13 @@
           path.classList.add("hov");
           svg.classList.add("pointing");
           setReadout(svg, [`Slot ${+d.slot + 1}`, d.type, `~${mmss(+d.len)} · at :${pad(Math.floor(+d.t / 60))}`]);
+          // The hub can be off-screen when zoomed, so repeat the details under the clock
+          info.textContent = `Slot ${+d.slot + 1} · ${d.type} · ~${mmss(+d.len)} · at :${pad(Math.floor(+d.t / 60))}:${pad(Math.floor(+d.t % 60))}`;
+          info.classList.remove("idle");
         });
         svg.addEventListener("mouseleave", reset);
         svg.addEventListener("click", e => {
+          if (dragged) { dragged = false; return; }
           const path = sliceAt(svg, e);
           const row = path && wheel.querySelector(`.slot[data-index="${path.dataset.slot}"]`);
           if (!row) return;
@@ -398,10 +496,15 @@
         slices += `<path data-slot="${p.i}" data-t="${t.toFixed(2)}" data-end="${end.toFixed(2)}" data-len="${p.seconds.toFixed(1)}"
           data-type="${esc(p.slot.file ? p.pool[0].name : p.slot.type)}" fill="${typeColor(p.slot.type)}" opacity="${n < playable.length ? 1 : 0.55}"
           d="M${at(R, t)} A${R} ${R} 0 ${large} 1 ${at(R, end)} L${at(R0, end)} A${R0} ${R0} 0 ${large} 0 ${at(R0, t)}Z"/>`;
-        if ((end - t) / HOUR * 360 >= 7) {
-          const [x, y] = xy((R + R0) / 2 + 6, (t + end) / 2);
-          slices += `<text class="n" x="${x}" y="${y}" text-anchor="middle" dominant-baseline="central">${p.i + 1}</text>`;
-        }
+        const mid = (t + end) / 2, angle = (mid / HOUR) * 360, flip = angle > 180;
+        const [nx, ny] = xy((R + R0) / 2 + 6, mid), [lx, ly] = xy((R + R0) / 2, mid);
+        const what = p.slot.file ? p.pool[0].name : p.slot.type + (p.slot.tags?.length ? ` [${p.slot.tags.join(", ")}]` : "");
+        // Radial label centred in the slice, reading outward (flipped on the left so it's never upside down)
+        slices += `<g class="lbl" data-deg="${((end - t) / HOUR * 360).toFixed(3)}">
+          <text class="n" x="${nx}" y="${ny}" text-anchor="middle" dominant-baseline="central">${p.i + 1}</text>
+          <text class="rl" x="${lx}" y="${ly}" transform="rotate(${(flip ? angle + 90 : angle - 90).toFixed(2)} ${lx} ${ly})"
+            text-anchor="middle" dominant-baseline="central">${p.i + 1} · ${esc(what)} · ${mmss(p.seconds)}</text>
+        </g>`;
         t = end + 0.01;
         n++;
       }
@@ -409,11 +512,11 @@
       let ticks = "";
       for (let m = 0; m < 60; m++) {
         const [x1, y1] = xy(R + 3, m * 60), [x2, y2] = xy(R + (m % 5 ? 6 : 10), m * 60);
-        ticks += `<line class="tick" x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke-width="${m % 15 ? 0.6 : 1.4}"/>`;
+        ticks += `<line class="tick" x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke-width="${m % 15 ? 1 : 2.5}"/>`;
       }
-      for (const m of [0, 15, 30, 45]) {
+      for (let m = 0; m < 60; m += 5) {
         const [x, y] = xy(R + 18, m * 60);
-        ticks += `<text class="mins" x="${x}" y="${y}" text-anchor="middle" dominant-baseline="central">:${pad(m)}</text>`;
+        ticks += `<text class="mins ${m % 15 ? "minor" : ""}" x="${x}" y="${y}" text-anchor="middle" dominant-baseline="central">:${pad(m)}</text>`;
       }
 
       const pass = playable.reduce((s, p) => s + p.seconds, 0);
@@ -429,6 +532,13 @@
               <text class="mid-sub" x="${C}" y="${C + 16}" text-anchor="middle"></text>
             </g>
           </svg>
+          <div class="zoom-ctl">
+            <button data-zoom="in" aria-label="Zoom in">+</button>
+            <button data-zoom="out" aria-label="Zoom out">−</button>
+            <button data-zoom="reset">Reset</button>
+            <span class="zoom-level">1×</span>
+          </div>
+          <p class="hover-info idle">${ZOOM_HINT}</p>
           <div class="legend">${types.map(t => `<span><i class="dot" style="background:${typeColor(t)}"></i>${esc(t)}</span>`).join("")}</div>
           <p>One pass ≈ ${mmss(pass)}${skipped ? ` · ${skipped} empty slot${skipped > 1 ? "s" : ""} skipped` : ""}</p>
         </figure>`;
