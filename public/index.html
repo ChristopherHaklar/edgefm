@@ -25,14 +25,25 @@
     }
     h1 img { display: block; width: min(380px, 88vw); height: auto; }
     #now-playing { font-size: 0.9rem; color: #aaa; min-height: 1.2em; }
-    audio { width: 320px; }
+    #controls { display: flex; align-items: center; gap: 0.75rem; }
+    #mute { background: none; border: 0; color: inherit; font-size: 1.25rem; cursor: pointer; }
+    #volume { width: 200px; accent-color: #eee; }
+    #tune-in {
+      background: #eee; color: #111; border: 0; border-radius: 999px;
+      padding: 0.6rem 1.4rem; font: inherit; cursor: pointer;
+    }
     #status { font-size: 0.75rem; color: #555; }
   </style>
 </head>
 <body>
   <h1><img src="logo.svg" alt="EdgeFM" width="584" height="205"></h1>
   <div id="now-playing">Loading...</div>
-  <audio id="player" controls autoplay></audio>
+  <button id="tune-in" hidden>Click anywhere to tune in</button>
+  <div id="controls">
+    <button id="mute" aria-label="Mute">🔊</button>
+    <input id="volume" type="range" min="0" max="1" step="0.01" value="1" aria-label="Volume">
+  </div>
+  <audio id="player" autoplay></audio>
   <div id="status"></div>
 
   <script type="module">
@@ -49,6 +60,9 @@
     const audio = document.getElementById("player");
     const nowPlaying = document.getElementById("now-playing");
     const status = document.getElementById("status");
+    const tuneInButton = document.getElementById("tune-in");
+    const muteButton = document.getElementById("mute");
+    const volumeSlider = document.getElementById("volume");
 
     let station = null, version = null, clockOffsetMs = 0, heardSegment = null;
     const now = () => Date.now() + clockOffsetMs;
@@ -74,6 +88,46 @@
         const offset = server + 500 - (sent + Date.now()) / 2;
         if (Number.isFinite(offset) && Math.abs(offset) > 2000) clockOffsetMs = offset;
       } catch {}
+    }
+
+    // Browsers only let a page start sound by itself once the listener has used the site
+    // before. Until then the first click or key press anywhere tunes in
+    function tuneIn() {
+      audio.play().catch(() => { tuneInButton.hidden = false; });
+    }
+    audio.addEventListener("playing", () => { tuneInButton.hidden = true; });
+    audio.addEventListener("pause", () => { tuneInButton.hidden = false; });
+    for (const type of ["pointerdown", "keydown"]) {
+      document.addEventListener(type, () => { if (audio.paused) tuneIn(); });
+    }
+
+    // A radio station has no pause, only volume
+    function setMuted(muted) {
+      audio.muted = muted;
+      muteButton.textContent = muted ? "🔇" : "🔊";
+      muteButton.setAttribute("aria-label", muted ? "Unmute" : "Mute");
+      if ("mediaSession" in navigator) navigator.mediaSession.playbackState = muted ? "paused" : "playing";
+    }
+    muteButton.addEventListener("click", () => setMuted(!audio.muted));
+    volumeSlider.addEventListener("input", () => {
+      audio.volume = volumeSlider.valueAsNumber;
+      setMuted(audio.volume === 0);
+      try { localStorage.setItem("volume", audio.volume); } catch {}
+    });
+    try {
+      const saved = localStorage.getItem("volume");
+      if (saved !== null) audio.volume = volumeSlider.value = Math.min(1, Math.max(0, Number(saved) || 0));
+    } catch {}
+    // iPhones only allow volume changes with the hardware buttons
+    const probe = audio.volume;
+    audio.volume = probe === 1 ? 0.5 : 1;
+    if (audio.volume === probe) volumeSlider.hidden = true;
+    audio.volume = probe;
+
+    // Media keys and headset buttons mute and unmute instead of pausing
+    if ("mediaSession" in navigator) {
+      navigator.mediaSession.setActionHandler("pause", () => setMuted(true));
+      navigator.mediaSession.setActionHandler("play", () => { setMuted(false); if (audio.paused) tuneIn(); });
     }
 
     // hls.js asks this loader for playlists instead of fetching a URL
@@ -115,8 +169,13 @@
         hls.loadSource(src);
         hls.attachMedia(audio);
         hls.on(Hls.Events.MANIFEST_PARSED, () => {
-          audio.play().catch(() => {});
+          tuneIn();
           status.textContent = label;
+        });
+        // If something did pause it (a phone call, say), rejoin the live broadcast
+        audio.addEventListener("play", () => {
+          const live = hls.liveSyncPosition;
+          if (live != null && live - audio.currentTime > 15) audio.currentTime = live;
         });
         // The media sequence number is the segment index since epoch
         hls.on(Hls.Events.FRAG_CHANGED, (_, { frag }) => { heardSegment = frag.sn; updateNowPlaying(); });
@@ -126,7 +185,7 @@
       } else if (audio.canPlayType("application/vnd.apple.mpegurl")) {
         // Native HLS (Safari / older iOS) fetches playlists itself, so it needs the Worker
         audio.src = `${WORKER_URL}/stream.m3u8`;
-        audio.play().catch(() => {});
+        tuneIn();
         status.textContent = "native hls";
       } else {
         status.textContent = "HLS not supported in this browser";
