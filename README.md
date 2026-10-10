@@ -119,7 +119,6 @@ This creates:
 - the `edgefm-audio` R2 bucket (with CORS configured), public at `audio.<your domain>` behind Cloudflare's CDN
 - a cache rule for that hostname, so segments are served from the CDN instead of counting as R2 reads
 - the Cloudflare Pages project for the web player, at `<your domain>` and `www.<your domain>` (`npm run publish` uploads the player to it)
-
 - a budget alert that emails you when usage charges for the billing period reach `budget_alert_dollars` (default $1)
 
 Cloudflare has no hard spending cap, so the alert only notifies. Staying on the Workers Free plan and keeping segments cached is what keeps the bill at zero.
