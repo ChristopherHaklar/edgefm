@@ -31,7 +31,7 @@ src/schedule.json          # Generated — 30-day pre-computed slot schedule
 public/index.html          # Web player (hls.js), deployed to Cloudflare Pages
 wheels.json                # Clock wheel slot template
 wrangler.toml              # Cloudflare Worker config
-terraform/                 # Cloudflare infrastructure (R2 bucket, Pages project)
+terraform/                 # Cloudflare infrastructure (R2 bucket, cache rule, Pages project, DNS)
 ```
 
 ## Content structure
@@ -81,15 +81,21 @@ Track names and artists come from the file's ID3/metadata tags when present, fal
 
 - [Node.js](https://nodejs.org) 18+ (install via [nvm](https://github.com/nvm-sh/nvm))
 - [ffmpeg](https://ffmpeg.org) in your PATH
-- [Terraform](https://developer.hashicorp.com/terraform/install) 1.5+
-- A [Cloudflare account](https://cloudflare.com) with an API token that has R2 and Pages permissions
+- [Terraform](https://developer.hashicorp.com/terraform/install) 1.10+
+- A [Cloudflare account](https://cloudflare.com) with:
+  - your domain added to it and its nameservers pointed at Cloudflare (Terraform looks the domain up, it doesn't add it)
+  - R2 enabled (dashboard → R2; this needs a payment method on file)
+  - the Cloudflare Pages GitHub app authorised for this repo (dashboard → Workers & Pages → create a Pages project → connect to Git; you can cancel once the repo is authorised)
+  - an API token with Workers R2 Storage, Cloudflare Pages, Workers Scripts, DNS and Cache Rules edit permissions
 
 ### 1. Provision infrastructure
 
 Terraform state is stored in a Cloudflare R2 bucket. Create it before the first init:
 
 ```bash
-wrangler r2 bucket create edgefm-tfstate
+npm install
+export CLOUDFLARE_API_TOKEN="your-api-token"
+npx wrangler r2 bucket create edgefm-tfstate
 ```
 
 Then configure the backend and your variables:
@@ -101,20 +107,19 @@ cp backend.hcl.example backend.hcl
 # (create R2 API tokens at dash.cloudflare.com → R2 → Manage R2 API tokens)
 
 cp terraform.tfvars.example terraform.tfvars
-# Edit terraform.tfvars — fill in your Cloudflare account ID, GitHub details, and alert email
+# Edit terraform.tfvars — fill in your Cloudflare account ID, domain and GitHub details
 
-export CLOUDFLARE_API_TOKEN="your-api-token"
 terraform init -backend-config=backend.hcl
 terraform apply
 ```
 
-This creates the `edgefm-audio` R2 bucket (with CORS configured), the Cloudflare Pages project for the web player, and a billing notification policy that emails you the moment any spend is detected.
+This creates:
 
-After `apply`:
-- Give the bucket a public URL (Cloudflare dashboard → R2 → `edgefm-audio` → Settings):
-  - **Production:** connect a **custom domain** (e.g. `audio.example.com`; the domain must be on Cloudflare). This puts Cloudflare's CDN cache in front of the segments.
-  - **Testing only:** enable the public development URL (`pub-XXXX.r2.dev`). It's rate-limited and not cached, so don't point listeners at it.
-- Set a hard spend cap: Cloudflare dashboard → Billing → Spend Management → set limit to **$0**. Terraform cannot enforce this programmatically — it must be set manually. This is your backstop against runaway costs.
+- the `edgefm-audio` R2 bucket (with CORS configured), public at `audio.<your domain>` behind Cloudflare's CDN
+- a cache rule for that hostname, so segments are served from the CDN instead of counting as R2 reads
+- the Cloudflare Pages project for the web player, deployed from `main` on every push, at `<your domain>` and `www.<your domain>`
+
+Cloudflare has no hard spending cap. After `apply`, set a budget alert so you hear about any spend: Cloudflare dashboard → Manage Account → Billing → Billable Usage → create a budget alert (e.g. $1). Terraform's Cloudflare provider can't create this alert type yet. Alerts only notify; staying on the Workers Free plan and keeping segments cached is what keeps the bill at zero.
 
 ### 2. Configure the Worker
 
@@ -122,14 +127,14 @@ Update `wrangler.toml` with your R2 public URL:
 
 ```toml
 [vars]
-PUBLIC_URL = "https://audio.example.com" # The bucket's custom domain (or r2.dev URL for testing) from step 1
+PUBLIC_URL = "https://audio.example.com" # audio.<your domain>, the audio_url output from step 1
 ```
 
 The station start time is `EPOCH` in `public/lib/schedule.js` — don't change it once live.
 
 Update `public/index.html`:
 - `REPLACE_WITH_R2_PUBLIC_URL` → the bucket's public URL from step 1 (same as `PUBLIC_URL`). The player loads `station.json` and the audio from there.
-- `REPLACE_WITH_WORKER_URL` → your Worker URL (`https://edgefm.<your-subdomain>.workers.dev`). Only used by browsers that can't run hls.js (older iPhones), or if `station.json` can't be loaded.
+- `REPLACE_WITH_WORKER_URL` → your Worker URL (`https://stream.<your domain>`, set by `routes` in `wrangler.toml`, or `https://edgefm.<your-subdomain>.workers.dev`). Only used by browsers that can't run hls.js (older iPhones), or if `station.json` can't be loaded.
 
 ### 3. Add content and deploy
 
