@@ -41,9 +41,9 @@
 
     // The R2 bucket's public URL (custom domain): station.json and the audio segments.
     // The player builds its own playlists from station.json, so web listeners never call the Worker
-    const STATION_URL = "REPLACE_WITH_R2_PUBLIC_URL";
+    const STATION_URL = "https://audio.edgefm.live";
     // Fallback for browsers that can't run hls.js (older iPhones) or if station.json can't be loaded
-    const WORKER_URL = "REPLACE_WITH_WORKER_URL";
+    const WORKER_URL = "https://stream.edgefm.live";
     const REFRESH_MS = 5 * 60 * 1000; // pick up a new publish in open tabs
 
     const audio = document.getElementById("player");

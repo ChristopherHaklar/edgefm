@@ -2,6 +2,9 @@ name = "edgefm"
 main = "src/worker.js"
 compatibility_date = "2024-01-01"
 
+# Stream URL for external players (VLC etc.); edgefm.live must be an active zone on the account
+routes = [{ pattern = "stream.edgefm.live", custom_domain = true }]
+
 [[r2_buckets]]
 binding = "AUDIO"
 bucket_name = "edgefm-audio"
@@ -9,4 +12,4 @@ bucket_name = "edgefm-audio"
 [vars]
 # Public URL of the edgefm-audio bucket. Use a custom domain in production so segments are
 # CDN-cached; the pub-XXXX.r2.dev URL is rate-limited and only meant for testing.
-PUBLIC_URL = "https://audio.example.com"
+PUBLIC_URL = "https://audio.edgefm.live"
