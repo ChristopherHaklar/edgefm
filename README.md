@@ -85,7 +85,7 @@ Track names and artists come from the file's ID3/metadata tags when present, fal
 - A [Cloudflare account](https://cloudflare.com) with:
   - your domain added to it and its nameservers pointed at Cloudflare (Terraform looks the domain up, it doesn't add it)
   - R2 enabled (dashboard → R2; this needs a payment method on file)
-  - an API token with Workers R2 Storage, Cloudflare Pages, Workers Scripts, DNS and Cache Rules edit permissions
+  - an API token with Workers R2 Storage, Cloudflare Pages, Workers Scripts, DNS, Cache Rules and Notifications edit permissions
 
 ### 1. Provision infrastructure
 
@@ -106,7 +106,9 @@ cp backend.hcl.example backend.hcl
 # (create R2 API tokens at dash.cloudflare.com → R2 → Manage R2 API tokens)
 
 cp terraform.tfvars.example terraform.tfvars
-# Edit terraform.tfvars — fill in your Cloudflare account ID and domain
+# Edit terraform.tfvars — fill in your Cloudflare account ID, domain and alert email
+
+export TF_VAR_cloudflare_api_token="$CLOUDFLARE_API_TOKEN"
 
 terraform init -backend-config=backend.hcl
 terraform apply
@@ -118,7 +120,9 @@ This creates:
 - a cache rule for that hostname, so segments are served from the CDN instead of counting as R2 reads
 - the Cloudflare Pages project for the web player, at `<your domain>` and `www.<your domain>` (`npm run publish` uploads the player to it)
 
-Cloudflare has no hard spending cap. After `apply`, set a budget alert so you hear about any spend: Cloudflare dashboard → Manage Account → Billing → Billable Usage → create a budget alert (e.g. $1). Terraform's Cloudflare provider can't create this alert type yet. Alerts only notify; staying on the Workers Free plan and keeping segments cached is what keeps the bill at zero.
+- a budget alert that emails you when usage charges for the billing period reach `budget_alert_dollars` (default $1)
+
+Cloudflare has no hard spending cap, so the alert only notifies. Staying on the Workers Free plan and keeping segments cached is what keeps the bill at zero.
 
 ### 2. Configure the Worker
 

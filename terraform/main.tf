@@ -6,6 +6,10 @@ terraform {
       source  = "cloudflare/cloudflare"
       version = "~> 5.0"
     }
+    restapi = {
+      source  = "Mastercard/restapi"
+      version = "~> 3.0"
+    }
   }
 
   backend "s3" {
@@ -15,7 +19,7 @@ terraform {
 }
 
 provider "cloudflare" {
-  # Set CLOUDFLARE_API_TOKEN in your environment
+  api_token = var.cloudflare_api_token
 }
 
 locals {
