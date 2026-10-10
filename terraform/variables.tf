@@ -13,14 +13,3 @@ variable "r2_location" {
   type        = string
   default     = "weur"
 }
-
-variable "github_owner" {
-  description = "GitHub username or org that owns the repo"
-  type        = string
-}
-
-variable "github_repo" {
-  description = "GitHub repo name"
-  type        = string
-  default     = "edgefm"
-}

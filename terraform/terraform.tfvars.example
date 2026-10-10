@@ -1,5 +1,3 @@
 cloudflare_account_id = "your-account-id-here"
 domain                = "example.com"
 r2_location           = "weur"
-github_owner          = "your-github-username"
-github_repo           = "edgefm"

@@ -4,7 +4,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "publish": "node pipeline/index.js && wrangler deploy",
+    "publish": "node pipeline/index.js && wrangler deploy && npm run deploy:player",
+    "deploy:player": "wrangler pages deploy public --project-name edgefm-player --branch main --commit-dirty=true",
     "dev": "wrangler dev",
     "pipeline": "node pipeline/index.js",
     "demo": "node demo/generate.js",

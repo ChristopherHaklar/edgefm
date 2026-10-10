@@ -85,7 +85,6 @@ Track names and artists come from the file's ID3/metadata tags when present, fal
 - A [Cloudflare account](https://cloudflare.com) with:
   - your domain added to it and its nameservers pointed at Cloudflare (Terraform looks the domain up, it doesn't add it)
   - R2 enabled (dashboard → R2; this needs a payment method on file)
-  - the Cloudflare Pages GitHub app authorised for this repo (dashboard → Workers & Pages → create a Pages project → connect to Git; you can cancel once the repo is authorised)
   - an API token with Workers R2 Storage, Cloudflare Pages, Workers Scripts, DNS and Cache Rules edit permissions
 
 ### 1. Provision infrastructure
@@ -107,7 +106,7 @@ cp backend.hcl.example backend.hcl
 # (create R2 API tokens at dash.cloudflare.com → R2 → Manage R2 API tokens)
 
 cp terraform.tfvars.example terraform.tfvars
-# Edit terraform.tfvars — fill in your Cloudflare account ID, domain and GitHub details
+# Edit terraform.tfvars — fill in your Cloudflare account ID and domain
 
 terraform init -backend-config=backend.hcl
 terraform apply
@@ -117,7 +116,7 @@ This creates:
 
 - the `edgefm-audio` R2 bucket (with CORS configured), public at `audio.<your domain>` behind Cloudflare's CDN
 - a cache rule for that hostname, so segments are served from the CDN instead of counting as R2 reads
-- the Cloudflare Pages project for the web player, deployed from `main` on every push, at `<your domain>` and `www.<your domain>`
+- the Cloudflare Pages project for the web player, at `<your domain>` and `www.<your domain>` (`npm run publish` uploads the player to it)
 
 Cloudflare has no hard spending cap. After `apply`, set a budget alert so you hear about any spend: Cloudflare dashboard → Manage Account → Billing → Billable Usage → create a budget alert (e.g. $1). Terraform's Cloudflare provider can't create this alert type yet. Alerts only notify; staying on the Workers Free plan and keeping segments cached is what keeps the bill at zero.
 
@@ -151,7 +150,7 @@ npm run publish
 
 `npm run demo` generates 10 synthetic tone tracks (one per slot category) using ffmpeg — useful for verifying the full pipeline before adding real audio.
 
-`npm run publish` runs the full pipeline — segments audio with ffmpeg, uploads new segments to R2, generates the catalog and schedule, then deploys the Worker. Run it again whenever you add or change content.
+`npm run publish` runs the full pipeline — segments audio with ffmpeg, uploads new segments to R2, generates the catalog and schedule, then deploys the Worker and the web player. Run it again whenever you add or change content.
 
 ### How content maps to R2
 
@@ -167,7 +166,8 @@ R2 has no folders for your content. Each track's ID is a hash of its audio (plus
 | Command | What it does |
 |---|---|
 | `npm run demo` | Generate synthetic demo audio into `content/` for testing |
-| `npm run publish` | Full pipeline + Worker deploy |
+| `npm run publish` | Full pipeline + Worker and web player deploy |
+| `npm run deploy:player` | Deploy only the web player (`public/`) to Cloudflare Pages |
 | `npm run pipeline` | Segment + upload + generate catalog/schedule only |
 | `npm run dev` | Local Worker dev server (segment URLs still point at R2) |
 | `npm run scheduler` | Web tool for editing `wheels.json` with a live schedule preview |

@@ -90,21 +90,13 @@ resource "cloudflare_ruleset" "cache" {
 
 # --- Cloudflare Pages project for the web player ---
 
+# Direct upload: `npm run publish` deploys public/ along with the audio and the Worker,
+# so the player never runs different scheduling code from them
+
 resource "cloudflare_pages_project" "player" {
   account_id        = var.cloudflare_account_id
   name              = "edgefm-player"
   production_branch = "main"
-
-  source = {
-    type = "github"
-    config = {
-      owner                          = var.github_owner
-      repo_name                      = var.github_repo
-      production_branch              = "main"
-      pr_comments_enabled            = false
-      production_deployments_enabled = true
-    }
-  }
 
   build_config = {
     build_command   = ""
