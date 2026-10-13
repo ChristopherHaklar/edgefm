@@ -14,6 +14,8 @@ An internet radio station that runs entirely on Cloudflare's free tier. Streams 
 
 ## Architecture
 
+See [docs/architecture.md](docs/architecture.md) for diagrams of the infrastructure and how audio gets from your machine to listeners.
+
 ```
 content/                   # Your audio files: one folder per type, subfolders are tags
 demo/generate.js           # Generates synthetic demo audio for local testing
